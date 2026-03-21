@@ -1,0 +1,455 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "GitHub REST API",
+    "version": "1.0.0"
+  },
+  "servers": [
+    { "url": "https://api.github.com" }
+  ],
+  "components": {
+    "schemas": {
+      "Repository": {
+        "type": "object",
+        "required": ["name", "full_name", "html_url", "private"],
+        "properties": {
+          "name": { "type": "string", "description": "Repository name" },
+          "full_name": { "type": "string", "description": "owner/name" },
+          "description": { "type": "string", "description": "Repository description" },
+          "private": { "type": "boolean" },
+          "fork": { "type": "boolean" },
+          "html_url": { "type": "string", "description": "URL to view in browser" },
+          "language": { "type": "string", "description": "Primary language" },
+          "stargazers_count": { "type": "integer", "description": "Number of stars" },
+          "forks_count": { "type": "integer", "description": "Number of forks" },
+          "open_issues_count": { "type": "integer", "description": "Number of open issues" },
+          "default_branch": { "type": "string" },
+          "archived": { "type": "boolean" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "updated_at": { "type": "string", "format": "date-time" },
+          "pushed_at": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
+    "parameters": {
+      "owner": {
+        "name": "owner",
+        "in": "path",
+        "required": true,
+        "description": "Repository owner",
+        "schema": { "type": "string" }
+      },
+      "repo": {
+        "name": "repo",
+        "in": "path",
+        "required": true,
+        "description": "Repository name",
+        "schema": { "type": "string" }
+      },
+      "org": {
+        "name": "org",
+        "in": "path",
+        "required": true,
+        "description": "Organization name",
+        "schema": { "type": "string" }
+      },
+      "username": {
+        "name": "username",
+        "in": "path",
+        "required": true,
+        "description": "GitHub username",
+        "schema": { "type": "string" }
+      }
+    }
+  },
+  "paths": {
+    "/repos/{owner}/{repo}/issues": {
+      "get": {
+        "summary": "List repository issues",
+        "tags": ["issues"],
+        "parameters": [
+          { "$ref": "#/components/parameters/owner" },
+          { "$ref": "#/components/parameters/repo" },
+          { "name": "state", "in": "query", "description": "open, closed, or all", "schema": { "type": "string" } },
+          { "name": "labels", "in": "query", "description": "Comma-separated label names", "schema": { "type": "string" } },
+          { "name": "sort", "in": "query", "description": "created, updated, or comments", "schema": { "type": "string" } },
+          { "name": "direction", "in": "query", "description": "asc or desc", "schema": { "type": "string" } },
+          { "name": "since", "in": "query", "description": "ISO 8601 timestamp", "schema": { "type": "string" } },
+          { "name": "assignee", "in": "query", "description": "Username, 'none', or '*'", "schema": { "type": "string" } },
+          { "name": "creator", "in": "query", "description": "Username of issue creator", "schema": { "type": "string" } },
+          { "name": "milestone", "in": "query", "description": "Milestone number, 'none', or '*'", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["number", "title", "state", "html_url", "created_at", "updated_at"],
+                    "properties": {
+                      "number": { "type": "integer", "description": "Issue number" },
+                      "title": { "type": "string", "description": "Issue title" },
+                      "state": { "type": "string", "description": "open or closed" },
+                      "body": { "type": "string", "description": "Issue body" },
+                      "html_url": { "type": "string", "description": "URL to view in browser" },
+                      "user": {
+                        "type": "object",
+                        "required": ["login"],
+                        "properties": {
+                          "login": { "type": "string", "description": "Author username" }
+                        }
+                      },
+                      "assignee": {
+                        "type": "object",
+                        "properties": {
+                          "login": { "type": "string", "description": "Assignee username" }
+                        }
+                      },
+                      "labels": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "name": { "type": "string" }
+                          }
+                        },
+                        "description": "Labels on the issue"
+                      },
+                      "comments": { "type": "integer", "description": "Number of comments" },
+                      "created_at": { "type": "string", "format": "date-time", "description": "When the issue was created" },
+                      "updated_at": { "type": "string", "format": "date-time", "description": "When the issue was last updated" },
+                      "closed_at": { "type": "string", "format": "date-time", "description": "When the issue was closed" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/repos/{owner}/{repo}/pulls": {
+      "get": {
+        "summary": "List pull requests",
+        "tags": ["pulls"],
+        "parameters": [
+          { "$ref": "#/components/parameters/owner" },
+          { "$ref": "#/components/parameters/repo" },
+          { "name": "state", "in": "query", "description": "open, closed, or all", "schema": { "type": "string" } },
+          { "name": "head", "in": "query", "description": "Filter by head user:ref", "schema": { "type": "string" } },
+          { "name": "base", "in": "query", "description": "Filter by base branch", "schema": { "type": "string" } },
+          { "name": "sort", "in": "query", "description": "created, updated, popularity, long-running", "schema": { "type": "string" } },
+          { "name": "direction", "in": "query", "description": "asc or desc", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["number", "title", "state", "html_url", "created_at", "updated_at"],
+                    "properties": {
+                      "number": { "type": "integer", "description": "PR number" },
+                      "title": { "type": "string", "description": "PR title" },
+                      "state": { "type": "string", "description": "open or closed" },
+                      "body": { "type": "string", "description": "PR description" },
+                      "html_url": { "type": "string", "description": "URL to view in browser" },
+                      "draft": { "type": "boolean", "description": "Whether the PR is a draft" },
+                      "user": {
+                        "type": "object",
+                        "required": ["login"],
+                        "properties": {
+                          "login": { "type": "string", "description": "Author username" }
+                        }
+                      },
+                      "head": {
+                        "type": "object",
+                        "required": ["ref"],
+                        "properties": {
+                          "ref": { "type": "string", "description": "Head branch name" }
+                        }
+                      },
+                      "base": {
+                        "type": "object",
+                        "required": ["ref"],
+                        "properties": {
+                          "ref": { "type": "string", "description": "Base branch name" }
+                        }
+                      },
+                      "merged_at": { "type": "string", "format": "date-time", "description": "When the PR was merged" },
+                      "created_at": { "type": "string", "format": "date-time", "description": "When the PR was created" },
+                      "updated_at": { "type": "string", "format": "date-time", "description": "When the PR was last updated" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/repos/{owner}/{repo}/commits": {
+      "get": {
+        "summary": "List commits",
+        "tags": ["repos"],
+        "parameters": [
+          { "$ref": "#/components/parameters/owner" },
+          { "$ref": "#/components/parameters/repo" },
+          { "name": "sha", "in": "query", "description": "SHA or branch to start listing from", "schema": { "type": "string" } },
+          { "name": "path", "in": "query", "description": "Only commits containing this file path", "schema": { "type": "string" } },
+          { "name": "author", "in": "query", "description": "GitHub username or email", "schema": { "type": "string" } },
+          { "name": "since", "in": "query", "description": "ISO 8601 timestamp", "schema": { "type": "string" } },
+          { "name": "until", "in": "query", "description": "ISO 8601 timestamp", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["sha", "html_url", "commit"],
+                    "properties": {
+                      "sha": { "type": "string", "description": "Commit SHA" },
+                      "html_url": { "type": "string", "description": "URL to view in browser" },
+                      "commit": {
+                        "type": "object",
+                        "required": ["message"],
+                        "properties": {
+                          "message": { "type": "string", "description": "Commit message" },
+                          "author": {
+                            "type": "object",
+                            "properties": {
+                              "name": { "type": "string", "description": "Author name" },
+                              "date": { "type": "string", "format": "date-time", "description": "Author date" }
+                            }
+                          }
+                        }
+                      },
+                      "author": {
+                        "type": "object",
+                        "properties": {
+                          "login": { "type": "string", "description": "Author GitHub username" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/repos/{owner}/{repo}/releases": {
+      "get": {
+        "summary": "List releases",
+        "tags": ["repos"],
+        "parameters": [
+          { "$ref": "#/components/parameters/owner" },
+          { "$ref": "#/components/parameters/repo" }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["tag_name", "name", "html_url", "created_at"],
+                    "properties": {
+                      "tag_name": { "type": "string", "description": "Git tag" },
+                      "name": { "type": "string", "description": "Release name" },
+                      "body": { "type": "string", "description": "Release notes" },
+                      "draft": { "type": "boolean", "description": "Whether this is a draft" },
+                      "prerelease": { "type": "boolean", "description": "Whether this is a prerelease" },
+                      "html_url": { "type": "string", "description": "URL to view in browser" },
+                      "author": {
+                        "type": "object",
+                        "properties": {
+                          "login": { "type": "string", "description": "Author username" }
+                        }
+                      },
+                      "created_at": { "type": "string", "format": "date-time" },
+                      "published_at": { "type": "string", "format": "date-time" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/repos/{owner}/{repo}/labels": {
+      "get": {
+        "summary": "List labels",
+        "tags": ["issues"],
+        "parameters": [
+          { "$ref": "#/components/parameters/owner" },
+          { "$ref": "#/components/parameters/repo" }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["name"],
+                    "properties": {
+                      "name": { "type": "string", "description": "Label name" },
+                      "color": { "type": "string", "description": "Hex color code" },
+                      "description": { "type": "string", "description": "Label description" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/repos/{owner}/{repo}/milestones": {
+      "get": {
+        "summary": "List milestones",
+        "tags": ["issues"],
+        "parameters": [
+          { "$ref": "#/components/parameters/owner" },
+          { "$ref": "#/components/parameters/repo" },
+          { "name": "state", "in": "query", "description": "open, closed, or all", "schema": { "type": "string" } },
+          { "name": "sort", "in": "query", "description": "due_on or completeness", "schema": { "type": "string" } },
+          { "name": "direction", "in": "query", "description": "asc or desc", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["number", "title", "state"],
+                    "properties": {
+                      "number": { "type": "integer", "description": "Milestone number" },
+                      "title": { "type": "string", "description": "Milestone title" },
+                      "state": { "type": "string", "description": "open or closed" },
+                      "description": { "type": "string" },
+                      "open_issues": { "type": "integer" },
+                      "closed_issues": { "type": "integer" },
+                      "due_on": { "type": "string", "format": "date-time", "description": "Due date" },
+                      "html_url": { "type": "string", "description": "URL to view in browser" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/orgs/{org}/repos": {
+      "get": {
+        "summary": "List organization repositories",
+        "tags": ["repos"],
+        "parameters": [
+          { "$ref": "#/components/parameters/org" },
+          { "name": "type", "in": "query", "description": "all, public, private, forks, sources, member", "schema": { "type": "string" } },
+          { "name": "sort", "in": "query", "description": "created, updated, pushed, full_name", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Repository" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/users/{username}/repos": {
+      "get": {
+        "summary": "List user repositories",
+        "tags": ["repos"],
+        "parameters": [
+          { "$ref": "#/components/parameters/username" },
+          { "name": "type", "in": "query", "description": "all, owner, member", "schema": { "type": "string" } },
+          { "name": "sort", "in": "query", "description": "created, updated, pushed, full_name", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Repository" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/repos/{owner}/{repo}/issues/{issue_number}/comments": {
+      "get": {
+        "summary": "List issue comments",
+        "tags": ["issues"],
+        "parameters": [
+          { "$ref": "#/components/parameters/owner" },
+          { "$ref": "#/components/parameters/repo" },
+          { "name": "issue_number", "in": "path", "required": true, "description": "Issue number", "schema": { "type": "integer" } },
+          { "name": "since", "in": "query", "description": "ISO 8601 timestamp", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["id", "body", "created_at"],
+                    "properties": {
+                      "id": { "type": "integer", "description": "Comment ID" },
+                      "body": { "type": "string", "description": "Comment body" },
+                      "html_url": { "type": "string", "description": "URL to view in browser" },
+                      "user": {
+                        "type": "object",
+                        "required": ["login"],
+                        "properties": {
+                          "login": { "type": "string", "description": "Commenter username" }
+                        }
+                      },
+                      "created_at": { "type": "string", "format": "date-time" },
+                      "updated_at": { "type": "string", "format": "date-time" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

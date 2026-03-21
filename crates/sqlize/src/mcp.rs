@@ -8,7 +8,7 @@ use rmcp::schemars;
 use rmcp::tool;
 
 use sqlize_core::catalog::Catalog;
-use sqlize_core::catalog::ddl::{catalog_ddl, single_table_ddl};
+use sqlize_core::catalog::ddl::single_table_ddl;
 use sqlize_core::catalog::types::TableName;
 use sqlize_core::exec::{AuthConfig, execute};
 use sqlize_core::output::{result_set_to_json, result_set_to_toon};
@@ -17,14 +17,25 @@ use sqlize_core::sql::planner::{explain, plan_query};
 pub struct SqlizeServer {
     catalog: Arc<Catalog>,
     auth: AuthConfig,
+    instructions: String,
     tool_router: ToolRouter<Self>,
 }
 
 impl SqlizeServer {
-    pub fn new(catalog: Arc<Catalog>, auth: AuthConfig) -> Self {
+    pub fn new(catalog: Arc<Catalog>, auth: AuthConfig, api_title: &str) -> Self {
+        let table_names: Vec<&str> = catalog.tables().map(|t| t.name.as_str()).collect();
+        let instructions = format!(
+            "SQLize: Query the {api_title} using SQL.\n\
+             Use get_schema to discover tables, then query to execute SQL.\n\
+             Results are returned in TOON format (compact, token-efficient).\n\n\
+             Available tables: {}",
+            table_names.join(", "),
+        );
+
         Self {
             catalog,
             auth,
+            instructions,
             tool_router: Self::tool_router(),
         }
     }
@@ -80,7 +91,24 @@ impl SqlizeServer {
                     }
                 }
             }
-            None => catalog_ddl(&self.catalog),
+            None => {
+                let mut out = String::from("Available tables (use get_schema with a table name for full DDL):\n\n");
+                for table in self.catalog.tables() {
+                    let required: Vec<_> = table.required_params().map(|c| c.name.as_str()).collect();
+                    let req = if required.is_empty() {
+                        String::new()
+                    } else {
+                        format!("  required: {}", required.join(", "))
+                    };
+                    out.push_str(&format!(
+                        "  {:<30} -- {}{}\n",
+                        table.name,
+                        truncate_desc(&table.description, 60),
+                        req,
+                    ));
+                }
+                out
+            }
         }
     }
 
@@ -128,6 +156,15 @@ impl SqlizeServer {
     }
 }
 
+fn truncate_desc(s: &str, max: usize) -> String {
+    let first_line = s.lines().next().unwrap_or(s);
+    if first_line.len() <= max {
+        first_line.to_owned()
+    } else {
+        format!("{}...", &first_line[..max - 3])
+    }
+}
+
 #[rmcp::tool_handler]
 impl ServerHandler for SqlizeServer {
     fn get_info(&self) -> ServerInfo {
@@ -139,10 +176,6 @@ impl ServerHandler for SqlizeServer {
         .with_server_info(
             Implementation::new("sqlize", env!("CARGO_PKG_VERSION")),
         )
-        .with_instructions(
-            "SQLize: Query REST APIs using SQL. \
-             Use get_schema to discover tables, then query to execute SQL. \
-             Results are returned in TOON format (compact, token-efficient).",
-        )
+        .with_instructions(&self.instructions)
     }
 }

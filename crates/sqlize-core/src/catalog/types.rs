@@ -225,6 +225,9 @@ pub struct ApiEndpoint {
     pub method: HttpMethod,
     pub path: PathTemplate,
     pub base_url: String,
+    /// The content type to send in the Accept header, derived from the spec's
+    /// response media types (e.g., "application/json").
+    pub accept: String,
 }
 
 impl ApiEndpoint {

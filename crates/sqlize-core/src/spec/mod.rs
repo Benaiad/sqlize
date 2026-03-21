@@ -13,22 +13,32 @@ use crate::error::{Error, Result};
 /// If `tag_filter` is provided, only endpoints tagged with one of the
 /// given tags will be included. This is important for large specs like
 /// GitHub's (900+ endpoints) where you only want a subset.
-pub fn load_catalog(path: &Path, tag_filter: Option<&[&str]>) -> Result<Catalog> {
+///
+/// Metadata extracted from the OpenAPI spec alongside the catalog.
+pub struct SpecInfo {
+    pub title: String,
+    pub base_url: String,
+}
+
+/// Returns a tuple of (Catalog, SpecInfo).
+pub fn load_catalog(path: &Path, tag_filter: Option<&[&str]>) -> Result<(Catalog, SpecInfo)> {
     let content = std::fs::read_to_string(path)
         .map_err(|e| Error::Spec(format!("failed to read {}: {e}", path.display())))?;
 
     let spec: OpenAPI = serde_json::from_str(&content)
         .map_err(|e| Error::Spec(format!("failed to parse OpenAPI spec: {e}")))?;
 
-    let base_url = extract_base_url(&spec);
+    let title = spec.info.title.clone();
+    let base_url = extract_base_url(&spec)?;
     let tables = table_gen::tables_from_spec(&spec, &base_url, tag_filter)?;
 
-    Catalog::from_tables(tables)
+    let info = SpecInfo { title, base_url };
+    Ok((Catalog::from_tables(tables)?, info))
 }
 
-fn extract_base_url(spec: &OpenAPI) -> String {
+fn extract_base_url(spec: &OpenAPI) -> Result<String> {
     spec.servers
         .first()
         .map(|s| s.url.trim_end_matches('/').to_owned())
-        .unwrap_or_else(|| "https://api.github.com".to_owned())
+        .ok_or_else(|| Error::Spec("spec has no servers defined".to_owned()))
 }

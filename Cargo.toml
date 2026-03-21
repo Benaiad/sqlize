@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/sqlize-core", "crates/sqlize-cli", "crates/sqlize-mcp"]
+members = ["crates/sqlize-core", "crates/sqlize"]
 resolver = "2"
 
 [workspace.package]

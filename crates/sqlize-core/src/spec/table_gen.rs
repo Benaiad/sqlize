@@ -98,8 +98,8 @@ fn try_build_table(
     operation: &Operation,
     base_url: &str,
 ) -> Result<Option<VirtualTable>> {
-    // Find the success response schema
-    let Some(item_schema) = extract_list_item_schema(spec, operation) else {
+    // Find the success response schema and its content type
+    let Some((item_schema, content_type)) = extract_list_item_schema(spec, operation) else {
         return Ok(None);
     };
 
@@ -143,18 +143,19 @@ fn try_build_table(
             method: HttpMethod::Get,
             path: path_template,
             base_url: base_url.to_owned(),
+            accept: content_type,
         },
     }))
 }
 
 /// Extract the item schema from a list endpoint's response.
 ///
-/// Looks for a 200 response with `application/json` content whose schema
-/// is an array. Returns the array item schema.
+/// Looks for a 200 response with a JSON-compatible content type whose schema
+/// is an array. Returns the array item schema and the content type string.
 fn extract_list_item_schema<'a>(
     spec: &'a OpenAPI,
     operation: &'a Operation,
-) -> Option<&'a openapiv3::Schema> {
+) -> Option<(&'a openapiv3::Schema, String)> {
     let response_ref = operation
         .responses
         .responses
@@ -172,17 +173,29 @@ fn extract_list_item_schema<'a>(
         }
     };
 
-    let media = response.content.get("application/json")?;
+    // Find the first JSON-compatible content type
+    let (content_type, media) = response
+        .content
+        .iter()
+        .find(|(ct, _)| is_json_content_type(ct))?;
+
     let schema_ref = media.schema.as_ref()?;
     let schema = resolve_schema(spec, schema_ref)?;
 
     match &schema.schema_kind {
         SchemaKind::Type(OaType::Array(arr)) => {
             let items_ref = arr.items.as_ref()?;
-            resolve_boxed_schema(spec, items_ref)
+            let item_schema = resolve_boxed_schema(spec, items_ref)?;
+            Some((item_schema, content_type.clone()))
         }
         _ => None,
     }
+}
+
+/// Check if a content type string represents JSON.
+/// Matches `application/json`, `application/vnd.github+json`, etc.
+fn is_json_content_type(ct: &str) -> bool {
+    ct == "application/json" || ct.ends_with("+json")
 }
 
 /// Derive a table name from an API path.

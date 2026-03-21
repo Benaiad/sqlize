@@ -1,10 +1,8 @@
-use std::path::PathBuf;
 use std::sync::Arc;
 
-use clap::Parser;
 use rustyline::DefaultEditor;
-use tabled::settings::Style;
 use tabled::builder::Builder;
+use tabled::settings::{Style, Width};
 
 use sqlize_core::catalog::Catalog;
 use sqlize_core::catalog::ddl::{catalog_ddl, single_table_ddl};
@@ -13,64 +11,14 @@ use sqlize_core::exec::{AuthConfig, execute};
 use sqlize_core::output::{result_set_to_json, result_set_to_toon};
 use sqlize_core::sql::planner::{explain, plan_query};
 
-#[derive(Parser)]
-#[command(name = "sqlize", about = "SQL interface for REST APIs")]
-struct Args {
-    /// Path to an OpenAPI spec file
-    #[arg(short, long)]
-    spec: PathBuf,
-
-    /// Only load endpoints with these tags (comma-separated)
-    #[arg(short, long, value_delimiter = ',')]
-    tags: Option<Vec<String>>,
-
-    /// Output format for query results
-    #[arg(short, long, default_value = "table")]
-    format: OutputFormat,
-}
-
 #[derive(Clone, Copy, clap::ValueEnum)]
-enum OutputFormat {
+pub enum OutputFormat {
     Table,
     Json,
     Toon,
 }
 
-#[tokio::main]
-async fn main() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::from_default_env(),
-        )
-        .init();
-
-    let args = Args::parse();
-
-    let tag_strs: Option<Vec<&str>> = args
-        .tags
-        .as_ref()
-        .map(|tags| tags.iter().map(|s| s.as_str()).collect());
-
-    let catalog = match sqlize_core::spec::load_catalog(
-        &args.spec,
-        tag_strs.as_deref(),
-    ) {
-        Ok(c) => Arc::new(c),
-        Err(e) => {
-            eprintln!("Error loading spec: {e}");
-            std::process::exit(1);
-        }
-    };
-
-    let auth = AuthConfig {
-        bearer_token: std::env::var("GITHUB_TOKEN").ok(),
-    };
-
-    eprintln!(
-        "Loaded {} tables from {}",
-        catalog.table_count(),
-        args.spec.display()
-    );
+pub async fn run(catalog: Arc<Catalog>, auth: AuthConfig, format: OutputFormat) {
     eprintln!("Type SQL to query, or: SHOW TABLES, DESCRIBE <table>, EXPLAIN <sql>");
     eprintln!("Ctrl+D to exit.\n");
 
@@ -108,7 +56,7 @@ async fn main() {
         } else if upper == "QUIT" || upper == "EXIT" || upper == "\\Q" {
             break;
         } else {
-            handle_query(&catalog, &auth, trimmed, args.format).await;
+            handle_query(&catalog, &auth, trimmed, format).await;
         }
     }
 }
@@ -127,12 +75,13 @@ fn handle_show_tables(catalog: &Catalog) {
             } else {
                 required.join(", ")
             },
-            &truncate(&table.description, 50),
+            &table.description,
         ]);
     }
 
     let mut tbl = builder.build();
     tbl.with(Style::rounded());
+    tbl.with(Width::wrap(term_width()).keep_words(true));
     println!("{tbl}");
 }
 
@@ -189,6 +138,7 @@ async fn handle_query(catalog: &Catalog, auth: &AuthConfig, sql: &str, format: O
 
             let mut tbl = builder.build();
             tbl.with(Style::rounded());
+            tbl.with(Width::wrap(term_width()).keep_words(true));
             println!("{tbl}");
         }
         OutputFormat::Json => {
@@ -206,18 +156,16 @@ async fn handle_query(catalog: &Catalog, auth: &AuthConfig, sql: &str, format: O
 fn format_value(v: &Value) -> String {
     match v {
         Value::Null => "NULL".to_owned(),
-        Value::String(s) => truncate(s, 60),
+        Value::String(s) => s.clone(),
         Value::Integer(n) => n.to_string(),
         Value::Float(n) => format!("{n:.2}"),
         Value::Boolean(b) => b.to_string(),
-        Value::Json(j) => truncate(&j.to_string(), 60),
+        Value::Json(j) => j.to_string(),
     }
 }
 
-fn truncate(s: &str, max: usize) -> String {
-    if s.len() <= max {
-        s.to_owned()
-    } else {
-        format!("{}...", &s[..max - 3])
-    }
+fn term_width() -> usize {
+    terminal_size::terminal_size()
+        .map(|(w, _)| w.0 as usize)
+        .unwrap_or(120)
 }

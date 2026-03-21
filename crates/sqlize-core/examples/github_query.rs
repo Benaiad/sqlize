@@ -13,10 +13,14 @@ async fn main() {
 
     let spec_path = Path::new("specs/github.json");
     let tags = ["repos", "issues", "pulls"];
-    let catalog = load_catalog(spec_path, Some(&tags)).expect("failed to load catalog");
+    let (catalog, _info) = load_catalog(spec_path, Some(&tags)).expect("failed to load catalog");
 
     let auth = AuthConfig {
-        bearer_token: std::env::var("GITHUB_TOKEN").ok(),
+        bearer_token: std::env::var("SQLIZE_BEARER_TOKEN").ok().or_else(|| {
+            std::env::var("SQLIZE_BEARER_ENV_VAR")
+                .ok()
+                .and_then(|var_name| std::env::var(&var_name).ok())
+        }),
     };
 
     let queries = [

@@ -8,7 +8,7 @@ fn main() {
 
     // Only load a subset of tags to keep output manageable
     let tags = ["repos", "issues", "pulls", "users"];
-    let catalog = load_catalog(spec_path, Some(&tags)).expect("failed to load catalog");
+    let (catalog, _info) = load_catalog(spec_path, Some(&tags)).expect("failed to load catalog");
 
     println!("=== SQLize: GitHub API Schema ===\n");
     println!("Tables generated: {}\n", catalog.table_count());

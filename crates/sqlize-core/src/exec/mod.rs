@@ -37,7 +37,7 @@ async fn execute_source(
 
             let mut request = client
                 .get(&url)
-                .header(ACCEPT, "application/vnd.github+json")
+                .header(ACCEPT, &call.endpoint.accept)
                 .header(USER_AGENT, "sqlize/0.1.0");
 
             if let Some(token) = &auth.bearer_token {
