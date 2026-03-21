@@ -125,6 +125,7 @@ mod tests {
                 path: PathTemplate::new("/repos/{owner}/{repo}/issues").unwrap(),
                 base_url: "https://api.github.com".to_owned(),
                 accept: "application/json".to_owned(),
+                data_path: None,
             },
         }
     }

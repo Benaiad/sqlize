@@ -99,7 +99,7 @@ fn try_build_table(
     base_url: &str,
 ) -> Result<Option<VirtualTable>> {
     // Find the success response schema and its content type
-    let Some((item_schema, content_type)) = extract_list_item_schema(spec, operation) else {
+    let Some((item_schema, content_type, data_path)) = extract_list_item_schema(spec, operation) else {
         return Ok(None);
     };
 
@@ -150,18 +150,27 @@ fn try_build_table(
             path: path_template,
             base_url: base_url.to_owned(),
             accept: content_type,
+            data_path,
         },
     }))
 }
 
 /// Extract the item schema from a list endpoint's response.
 ///
-/// Looks for a 200 response with a JSON-compatible content type whose schema
-/// is an array. Returns the array item schema and the content type string.
+/// Returns (item_schema, content_type, data_path) where:
+/// - `item_schema` is the schema of each array element
+/// - `content_type` is the Accept header value
+/// - `data_path` is `None` for top-level arrays, or `Some("field")` for
+///   wrapped responses like `{"data": [...]}`
+///
+/// Handles two response shapes:
+/// 1. Top-level array: `[{...}, {...}]`
+/// 2. Wrapped array: `{"data": [{...}], "has_more": true}` — finds the
+///    object property whose type is `array` and extracts its items schema.
 fn extract_list_item_schema<'a>(
     spec: &'a OpenAPI,
     operation: &'a Operation,
-) -> Option<(&'a openapiv3::Schema, String)> {
+) -> Option<(&'a openapiv3::Schema, String, Option<String>)> {
     let response_ref = operation
         .responses
         .responses
@@ -179,7 +188,6 @@ fn extract_list_item_schema<'a>(
         }
     };
 
-    // Find the first JSON-compatible content type
     let (content_type, media) = response
         .content
         .iter()
@@ -188,14 +196,32 @@ fn extract_list_item_schema<'a>(
     let schema_ref = media.schema.as_ref()?;
     let schema = resolve_schema(spec, schema_ref)?;
 
-    match &schema.schema_kind {
-        SchemaKind::Type(OaType::Array(arr)) => {
-            let items_ref = arr.items.as_ref()?;
-            let item_schema = resolve_boxed_schema(spec, items_ref)?;
-            Some((item_schema, content_type.clone()))
-        }
-        _ => None,
+    // Case 1: top-level array
+    if let SchemaKind::Type(OaType::Array(arr)) = &schema.schema_kind {
+        let items_ref = arr.items.as_ref()?;
+        let item_schema = resolve_boxed_schema(spec, items_ref)?;
+        return Some((item_schema, content_type.clone(), None));
     }
+
+    // Case 2: wrapped array — object with a property that's an array of objects
+    if let SchemaKind::Type(OaType::Object(obj)) = &schema.schema_kind {
+        for (field_name, prop_ref) in &obj.properties {
+            let Some(prop_schema) = resolve_boxed_schema(spec, prop_ref) else {
+                continue;
+            };
+            if let SchemaKind::Type(OaType::Array(arr)) = &prop_schema.schema_kind {
+                let items_ref = arr.items.as_ref()?;
+                let item_schema = resolve_boxed_schema(spec, items_ref)?;
+                return Some((
+                    item_schema,
+                    content_type.clone(),
+                    Some(field_name.clone()),
+                ));
+            }
+        }
+    }
+
+    None
 }
 
 /// Check if a content type string represents JSON.

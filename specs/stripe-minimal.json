@@ -1,0 +1,573 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Stripe API",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://api.stripe.com"
+    }
+  ],
+  "paths": {
+    "/v1/customers": {
+      "get": {
+        "summary": "List customers",
+        "tags": [
+          "customers"
+        ],
+        "parameters": [
+          {
+            "name": "email",
+            "in": "query",
+            "description": "Filter by email",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "created[gte]",
+            "in": "query",
+            "description": "Created after (Unix timestamp)",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "created[lte]",
+            "in": "query",
+            "description": "Created before (Unix timestamp)",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Number of results (1-100)",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "email",
+                          "created"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "description": "Customer ID (cus_...)"
+                          },
+                          "email": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "phone": {
+                            "type": "string"
+                          },
+                          "currency": {
+                            "type": "string",
+                            "description": "Default currency (e.g., usd)"
+                          },
+                          "balance": {
+                            "type": "integer",
+                            "description": "Balance in cents"
+                          },
+                          "delinquent": {
+                            "type": "boolean",
+                            "description": "Has overdue invoices"
+                          },
+                          "created": {
+                            "type": "integer",
+                            "description": "Created (Unix timestamp)"
+                          },
+                          "metadata": {
+                            "type": "object",
+                            "description": "Custom key-value pairs"
+                          }
+                        }
+                      }
+                    },
+                    "has_more": {
+                      "type": "boolean"
+                    },
+                    "url": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/charges": {
+      "get": {
+        "summary": "List charges",
+        "tags": [
+          "charges"
+        ],
+        "parameters": [
+          {
+            "name": "customer",
+            "in": "query",
+            "description": "Filter by customer ID",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "created[gte]",
+            "in": "query",
+            "description": "Created after (Unix timestamp)",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "created[lte]",
+            "in": "query",
+            "description": "Created before (Unix timestamp)",
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Number of results (1-100)",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "amount",
+                          "currency",
+                          "status",
+                          "created"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "description": "Charge ID (ch_...)"
+                          },
+                          "amount": {
+                            "type": "integer",
+                            "description": "Amount in cents"
+                          },
+                          "currency": {
+                            "type": "string"
+                          },
+                          "status": {
+                            "type": "string",
+                            "description": "succeeded, pending, or failed"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "customer": {
+                            "type": "string",
+                            "description": "Customer ID"
+                          },
+                          "receipt_email": {
+                            "type": "string"
+                          },
+                          "paid": {
+                            "type": "boolean"
+                          },
+                          "refunded": {
+                            "type": "boolean"
+                          },
+                          "amount_refunded": {
+                            "type": "integer",
+                            "description": "Refunded amount in cents"
+                          },
+                          "failure_message": {
+                            "type": "string"
+                          },
+                          "created": {
+                            "type": "integer",
+                            "description": "Created (Unix timestamp)"
+                          }
+                        }
+                      }
+                    },
+                    "has_more": {
+                      "type": "boolean"
+                    },
+                    "url": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/subscriptions": {
+      "get": {
+        "summary": "List subscriptions",
+        "tags": [
+          "subscriptions"
+        ],
+        "parameters": [
+          {
+            "name": "customer",
+            "in": "query",
+            "description": "Filter by customer ID",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "active, past_due, canceled, unpaid, trialing, all",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "price",
+            "in": "query",
+            "description": "Filter by price ID",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Number of results (1-100)",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "customer",
+                          "status",
+                          "created"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "description": "Subscription ID (sub_...)"
+                          },
+                          "customer": {
+                            "type": "string",
+                            "description": "Customer ID"
+                          },
+                          "status": {
+                            "type": "string",
+                            "description": "active, past_due, canceled, unpaid, trialing"
+                          },
+                          "currency": {
+                            "type": "string"
+                          },
+                          "current_period_start": {
+                            "type": "integer",
+                            "description": "Unix timestamp"
+                          },
+                          "current_period_end": {
+                            "type": "integer",
+                            "description": "Unix timestamp"
+                          },
+                          "cancel_at_period_end": {
+                            "type": "boolean"
+                          },
+                          "canceled_at": {
+                            "type": "integer",
+                            "description": "Unix timestamp"
+                          },
+                          "trial_start": {
+                            "type": "integer",
+                            "description": "Unix timestamp"
+                          },
+                          "trial_end": {
+                            "type": "integer",
+                            "description": "Unix timestamp"
+                          },
+                          "created": {
+                            "type": "integer",
+                            "description": "Created (Unix timestamp)"
+                          }
+                        }
+                      }
+                    },
+                    "has_more": {
+                      "type": "boolean"
+                    },
+                    "url": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/invoices": {
+      "get": {
+        "summary": "List invoices",
+        "tags": [
+          "invoices"
+        ],
+        "parameters": [
+          {
+            "name": "customer",
+            "in": "query",
+            "description": "Filter by customer ID",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "draft, open, paid, uncollectible, void",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "subscription",
+            "in": "query",
+            "description": "Filter by subscription ID",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Number of results (1-100)",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "customer",
+                          "status",
+                          "created"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "description": "Invoice ID (in_...)"
+                          },
+                          "customer": {
+                            "type": "string",
+                            "description": "Customer ID"
+                          },
+                          "subscription": {
+                            "type": "string",
+                            "description": "Subscription ID"
+                          },
+                          "status": {
+                            "type": "string",
+                            "description": "draft, open, paid, uncollectible, void"
+                          },
+                          "currency": {
+                            "type": "string"
+                          },
+                          "amount_due": {
+                            "type": "integer",
+                            "description": "Amount due in cents"
+                          },
+                          "amount_paid": {
+                            "type": "integer",
+                            "description": "Amount paid in cents"
+                          },
+                          "amount_remaining": {
+                            "type": "integer",
+                            "description": "Amount remaining in cents"
+                          },
+                          "number": {
+                            "type": "string",
+                            "description": "Invoice number"
+                          },
+                          "hosted_invoice_url": {
+                            "type": "string",
+                            "description": "URL to hosted invoice page"
+                          },
+                          "due_date": {
+                            "type": "integer",
+                            "description": "Due date (Unix timestamp)"
+                          },
+                          "created": {
+                            "type": "integer",
+                            "description": "Created (Unix timestamp)"
+                          }
+                        }
+                      }
+                    },
+                    "has_more": {
+                      "type": "boolean"
+                    },
+                    "url": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/products": {
+      "get": {
+        "summary": "List products",
+        "tags": [
+          "products"
+        ],
+        "parameters": [
+          {
+            "name": "active",
+            "in": "query",
+            "description": "Only active products",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Number of results (1-100)",
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": [
+                          "id",
+                          "name",
+                          "active",
+                          "created"
+                        ],
+                        "properties": {
+                          "id": {
+                            "type": "string",
+                            "description": "Product ID (prod_...)"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "description": {
+                            "type": "string"
+                          },
+                          "active": {
+                            "type": "boolean"
+                          },
+                          "default_price": {
+                            "type": "string",
+                            "description": "Default price ID"
+                          },
+                          "unit_label": {
+                            "type": "string"
+                          },
+                          "created": {
+                            "type": "integer",
+                            "description": "Created (Unix timestamp)"
+                          },
+                          "updated": {
+                            "type": "integer",
+                            "description": "Updated (Unix timestamp)"
+                          }
+                        }
+                      }
+                    },
+                    "has_more": {
+                      "type": "boolean"
+                    },
+                    "url": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

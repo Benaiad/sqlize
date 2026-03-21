@@ -1,0 +1,279 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "GitLab REST API",
+    "version": "1.0.0"
+  },
+  "servers": [
+    { "url": "https://gitlab.com/api/v4" }
+  ],
+  "components": {
+    "schemas": {
+      "Project": {
+        "type": "object",
+        "required": ["id", "name", "web_url"],
+        "properties": {
+          "id": { "type": "integer", "description": "Project ID" },
+          "name": { "type": "string", "description": "Project name" },
+          "name_with_namespace": { "type": "string", "description": "Full path (group / project)" },
+          "path_with_namespace": { "type": "string", "description": "URL-safe full path" },
+          "description": { "type": "string" },
+          "web_url": { "type": "string", "description": "URL to view in browser" },
+          "default_branch": { "type": "string" },
+          "visibility": { "type": "string", "description": "public, internal, or private" },
+          "star_count": { "type": "integer" },
+          "forks_count": { "type": "integer" },
+          "open_issues_count": { "type": "integer" },
+          "archived": { "type": "boolean" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "last_activity_at": { "type": "string", "format": "date-time" }
+        }
+      }
+    },
+    "parameters": {
+      "project_id": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "description": "Project ID or URL-encoded path (e.g., 278964 or gitlab-org%2Fgitlab)",
+        "schema": { "type": "string" }
+      }
+    }
+  },
+  "paths": {
+    "/projects": {
+      "get": {
+        "summary": "List projects",
+        "tags": ["projects"],
+        "parameters": [
+          { "name": "search", "in": "query", "description": "Search by name", "schema": { "type": "string" } },
+          { "name": "visibility", "in": "query", "description": "public, internal, or private", "schema": { "type": "string" } },
+          { "name": "order_by", "in": "query", "description": "id, name, created_at, updated_at, last_activity_at, similarity, star_count", "schema": { "type": "string" } },
+          { "name": "sort", "in": "query", "description": "asc or desc", "schema": { "type": "string" } },
+          { "name": "owned", "in": "query", "description": "Only projects owned by the current user", "schema": { "type": "boolean" } },
+          { "name": "membership", "in": "query", "description": "Only projects the user is a member of", "schema": { "type": "boolean" } },
+          { "name": "archived", "in": "query", "description": "Include archived projects", "schema": { "type": "boolean" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Project" }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{id}/issues": {
+      "get": {
+        "summary": "List project issues",
+        "tags": ["issues"],
+        "parameters": [
+          { "$ref": "#/components/parameters/project_id" },
+          { "name": "state", "in": "query", "description": "opened, closed, or all", "schema": { "type": "string" } },
+          { "name": "labels", "in": "query", "description": "Comma-separated label names", "schema": { "type": "string" } },
+          { "name": "assignee_username", "in": "query", "description": "Username of assignee", "schema": { "type": "string" } },
+          { "name": "author_username", "in": "query", "description": "Username of author", "schema": { "type": "string" } },
+          { "name": "milestone", "in": "query", "description": "Milestone title", "schema": { "type": "string" } },
+          { "name": "search", "in": "query", "description": "Search in title and description", "schema": { "type": "string" } },
+          { "name": "order_by", "in": "query", "description": "created_at, updated_at, priority, due_date, label_priority, relative_position", "schema": { "type": "string" } },
+          { "name": "sort", "in": "query", "description": "asc or desc", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["iid", "title", "state", "web_url", "created_at"],
+                    "properties": {
+                      "iid": { "type": "integer", "description": "Issue number within the project" },
+                      "title": { "type": "string", "description": "Issue title" },
+                      "state": { "type": "string", "description": "opened or closed" },
+                      "description": { "type": "string", "description": "Issue description" },
+                      "web_url": { "type": "string", "description": "URL to view in browser" },
+                      "author": {
+                        "type": "object",
+                        "properties": {
+                          "username": { "type": "string", "description": "Author username" }
+                        }
+                      },
+                      "assignee": {
+                        "type": "object",
+                        "properties": {
+                          "username": { "type": "string", "description": "Assignee username" }
+                        }
+                      },
+                      "labels": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Label names"
+                      },
+                      "milestone": {
+                        "type": "object",
+                        "properties": {
+                          "title": { "type": "string", "description": "Milestone title" }
+                        }
+                      },
+                      "upvotes": { "type": "integer" },
+                      "downvotes": { "type": "integer" },
+                      "user_notes_count": { "type": "integer", "description": "Number of comments" },
+                      "due_date": { "type": "string", "description": "Due date (YYYY-MM-DD)" },
+                      "created_at": { "type": "string", "format": "date-time" },
+                      "updated_at": { "type": "string", "format": "date-time" },
+                      "closed_at": { "type": "string", "format": "date-time" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{id}/merge_requests": {
+      "get": {
+        "summary": "List merge requests",
+        "tags": ["merge_requests"],
+        "parameters": [
+          { "$ref": "#/components/parameters/project_id" },
+          { "name": "state", "in": "query", "description": "opened, closed, merged, or all", "schema": { "type": "string" } },
+          { "name": "labels", "in": "query", "description": "Comma-separated label names", "schema": { "type": "string" } },
+          { "name": "author_username", "in": "query", "description": "Username of author", "schema": { "type": "string" } },
+          { "name": "reviewer_username", "in": "query", "description": "Username of reviewer", "schema": { "type": "string" } },
+          { "name": "source_branch", "in": "query", "description": "Source branch name", "schema": { "type": "string" } },
+          { "name": "target_branch", "in": "query", "description": "Target branch name", "schema": { "type": "string" } },
+          { "name": "search", "in": "query", "description": "Search in title and description", "schema": { "type": "string" } },
+          { "name": "order_by", "in": "query", "description": "created_at or updated_at", "schema": { "type": "string" } },
+          { "name": "sort", "in": "query", "description": "asc or desc", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["iid", "title", "state", "web_url", "created_at"],
+                    "properties": {
+                      "iid": { "type": "integer", "description": "MR number within the project" },
+                      "title": { "type": "string", "description": "MR title" },
+                      "state": { "type": "string", "description": "opened, closed, or merged" },
+                      "description": { "type": "string", "description": "MR description" },
+                      "web_url": { "type": "string", "description": "URL to view in browser" },
+                      "draft": { "type": "boolean", "description": "Whether the MR is a draft" },
+                      "source_branch": { "type": "string" },
+                      "target_branch": { "type": "string" },
+                      "author": {
+                        "type": "object",
+                        "properties": {
+                          "username": { "type": "string", "description": "Author username" }
+                        }
+                      },
+                      "labels": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Label names"
+                      },
+                      "merge_status": { "type": "string", "description": "can_be_merged, cannot_be_merged, etc." },
+                      "user_notes_count": { "type": "integer", "description": "Number of comments" },
+                      "merged_at": { "type": "string", "format": "date-time" },
+                      "created_at": { "type": "string", "format": "date-time" },
+                      "updated_at": { "type": "string", "format": "date-time" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{id}/pipelines": {
+      "get": {
+        "summary": "List project pipelines",
+        "tags": ["pipelines"],
+        "parameters": [
+          { "$ref": "#/components/parameters/project_id" },
+          { "name": "status", "in": "query", "description": "running, pending, success, failed, canceled, skipped, manual, scheduled", "schema": { "type": "string" } },
+          { "name": "ref", "in": "query", "description": "Branch or tag name", "schema": { "type": "string" } },
+          { "name": "source", "in": "query", "description": "push, web, trigger, schedule, api, pipeline, merge_request_event", "schema": { "type": "string" } },
+          { "name": "order_by", "in": "query", "description": "id, status, ref, updated_at, user_id", "schema": { "type": "string" } },
+          { "name": "sort", "in": "query", "description": "asc or desc", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["id", "status", "ref", "web_url", "created_at"],
+                    "properties": {
+                      "id": { "type": "integer", "description": "Pipeline ID" },
+                      "iid": { "type": "integer", "description": "Pipeline number within the project" },
+                      "status": { "type": "string", "description": "running, pending, success, failed, canceled, skipped" },
+                      "ref": { "type": "string", "description": "Branch or tag" },
+                      "sha": { "type": "string", "description": "Commit SHA" },
+                      "source": { "type": "string", "description": "What triggered the pipeline" },
+                      "web_url": { "type": "string", "description": "URL to view in browser" },
+                      "created_at": { "type": "string", "format": "date-time" },
+                      "updated_at": { "type": "string", "format": "date-time" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/projects/{id}/members": {
+      "get": {
+        "summary": "List project members",
+        "tags": ["members"],
+        "parameters": [
+          { "$ref": "#/components/parameters/project_id" },
+          { "name": "query", "in": "query", "description": "Search by name or username", "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": ["id", "username", "name", "access_level"],
+                    "properties": {
+                      "id": { "type": "integer" },
+                      "username": { "type": "string" },
+                      "name": { "type": "string" },
+                      "state": { "type": "string", "description": "active or blocked" },
+                      "web_url": { "type": "string", "description": "Profile URL" },
+                      "access_level": { "type": "integer", "description": "10=Guest, 20=Reporter, 30=Developer, 40=Maintainer, 50=Owner" },
+                      "created_at": { "type": "string", "format": "date-time" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

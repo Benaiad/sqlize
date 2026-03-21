@@ -1,29 +1,44 @@
 # sqlize
 
-SQL interface for REST APIs. Built for AI agents.
+SQL interface for REST APIs.
 
-MCP tool definitions burn tens of thousands of tokens before an agent processes a single message. GitHub's MCP server alone consumes ~55,000 tokens across 93 tools. Tool selection accuracy collapses from >90% to ~14% as tools scale.
-
-sqlize replaces that with a single SQL endpoint. One `CREATE TABLE` DDL is more composable and more token-efficient than dozens of tool definitions. Agents already know SQL — there's nothing to teach.
+Point sqlize at an OpenAPI spec and query any REST API using SQL. Path parameters become `WHERE` clauses, query parameters become filters, response fields become columns. One tool, any API.
 
 ## How it works
 
 Point sqlize at an OpenAPI spec. It generates virtual SQL tables from the API's endpoints — path parameters become required `WHERE` clauses, query parameters become filterable columns, response fields become the rest. Write SQL, get results.
 
-```sql
-SELECT number, title, state
-FROM issues
-WHERE owner = 'rust-lang' AND repo = 'rust' AND state = 'open'
-LIMIT 5
+```sh
+export SQLIZE_BEARER_ENV_VAR=GITHUB_TOKEN
+sqlize --spec specs/github-minimal.json --format toon
 ```
 
-```
+```sql
+sqlize> SELECT number, title, state FROM issues
+     >  WHERE owner = 'rust-lang' AND repo = 'rust' AND state = 'open'
+     >  LIMIT 5;
 [5]{number,title,state}:
   154162,"(EXPERIMENT) Replace zero-deps nodes with a singleton",open
   154161,On E0277 tweak help when single type impls traits,open
   154160,Rollup of 6 pull requests,open
   154158,"Audit `//@ run-pass` directives in UI tests",open
   154157,Enforce deterministic signed zero behavior in float min/max and clamp,open
+```
+
+Same tool, different API — Stripe:
+
+```sh
+export SQLIZE_BEARER_ENV_VAR=STRIPE_TEST_API_KEY
+sqlize --spec specs/stripe-minimal.json
+```
+
+```sql
+sqlize> SELECT email, name FROM customers;
+╭──────────────────────┬────────────────╮
+│ email                │ name           │
+├──────────────────────┼────────────────┤
+│ sp@summerproject.com │ Summer Project │
+╰──────────────────────┴────────────────╯
 ```
 
 Results are returned in [TOON](https://github.com/toon-format/toon) — a compact, token-oriented encoding that's 40–50% smaller than JSON.
@@ -36,13 +51,15 @@ cargo install --path crates/sqlize
 
 ## Setup
 
-A curated minimal spec for GitHub ships with the repo:
+Curated minimal specs ship with the repo:
 
-```sh
-specs/github-minimal.json   # 9 tables, ~120 columns — ready to use
-```
+| Spec | Tables | Auth | Notes |
+|------|--------|------|-------|
+| `specs/github-minimal.json` | 9 | Bearer token | Issues, PRs, commits, releases, repos |
+| `specs/gitlab-minimal.json` | 5 | Bearer token | Projects, issues, MRs, pipelines, members |
+| `specs/stripe-minimal.json` | 5 | Bearer token | Customers, charges, subscriptions, invoices, products |
 
-You can also use the full GitHub OpenAPI spec (900+ endpoints, hundreds of columns per table):
+You can also use full OpenAPI specs (e.g., GitHub's 900+ endpoints):
 
 ```sh
 curl -L -o specs/github.json \
@@ -81,7 +98,7 @@ Output formats: `--format table` (default), `--format toon`, `--format json`.
 
 ## MCP server
 
-Three tools:
+sqlize also runs as an MCP server, giving AI agents SQL access to APIs through three tools:
 
 - **`get_schema`** — returns `CREATE TABLE` DDL for table discovery
 - **`query`** — executes read-only SQL, returns TOON
@@ -117,9 +134,9 @@ The planner classifies each `WHERE` condition:
 
 Path parameters are required — omitting them fails at query planning, before any HTTP call is made.
 
-## Why
+## Why SQL
 
-The thesis: replace wide imperative tool surfaces with a narrow declarative query surface. SQL is the right choice because LLMs achieve 86–91% accuracy on well-defined schemas, and the queries here are structurally simple — `SELECT` with `WHERE`, `ORDER BY`, `LIMIT`.
+REST APIs are imperative — you need to know the endpoint, the parameters, the pagination scheme, the response shape. SQL is declarative — you say what you want and the engine figures out how to get it. The mapping is natural: endpoints become tables, parameters become columns, and the query planner translates SQL into API calls.
 
 Research and competitive analysis in [`research/`](research/).
 

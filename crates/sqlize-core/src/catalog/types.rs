@@ -228,6 +228,10 @@ pub struct ApiEndpoint {
     /// The content type to send in the Accept header, derived from the spec's
     /// response media types (e.g., "application/json").
     pub accept: String,
+    /// For wrapped responses (e.g., Stripe's `{"data": [...]}`), the JSON field
+    /// name that holds the array. `None` for top-level arrays.
+    /// Derived from the OpenAPI response schema at spec-loading time.
+    pub data_path: Option<String>,
 }
 
 impl ApiEndpoint {

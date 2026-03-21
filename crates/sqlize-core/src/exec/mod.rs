@@ -89,7 +89,16 @@ async fn execute_source(
             }
 
             let body: serde_json::Value = resp.json().await?;
-            response::json_to_result_set(&body, &call.table)
+
+            // If the endpoint has a data_path, extract the nested array
+            let data = match &call.endpoint.data_path {
+                Some(field) => body
+                    .get(field)
+                    .unwrap_or(&body),
+                None => &body,
+            };
+
+            response::json_to_result_set(data, &call.table)
         }
         PlanSource::Join { .. } => {
             Err(Error::UnsupportedSql("JOINs not yet implemented in execution engine".to_owned()))

@@ -156,4 +156,5 @@ mod tests {
         let result = json_to_result_set(&json, &table).unwrap();
         assert_eq!(result.rows.len(), 1);
     }
+
 }
