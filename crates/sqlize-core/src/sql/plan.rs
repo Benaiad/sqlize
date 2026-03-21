@@ -5,8 +5,8 @@ use crate::catalog::types::{ApiEndpoint, ColumnName, TableName};
 /// The output of the query planner: a recipe for executing a SQL query.
 #[derive(Debug)]
 pub struct QueryPlan {
-    pub source: PlanSource,
-    pub post: PostProcessing,
+    pub(crate) source: PlanSource,
+    pub(crate) post: PostProcessing,
 }
 
 /// Where rows come from — a single API call or a join of two sources.
@@ -23,12 +23,12 @@ pub enum PlanSource {
 /// A single API call to execute.
 #[derive(Debug)]
 pub struct ApiCall {
-    pub table: TableName,
-    pub endpoint: ApiEndpoint,
+    pub(crate) table: TableName,
+    pub(crate) endpoint: ApiEndpoint,
     /// Path parameter values extracted from WHERE (e.g., owner = 'anthropics').
-    pub path_params: HashMap<String, String>,
+    pub(crate) path_params: HashMap<ColumnName, String>,
     /// Query parameter values to push down to the API (e.g., state = 'open').
-    pub query_params: HashMap<String, String>,
+    pub(crate) query_params: HashMap<String, String>,
 }
 
 /// A join condition: left_col = right_col.
@@ -42,15 +42,15 @@ pub struct JoinCondition {
 #[derive(Debug, Default)]
 pub struct PostProcessing {
     /// SELECT column list. Empty means SELECT *.
-    pub projections: Vec<Projection>,
+    pub(crate) projections: Vec<Projection>,
     /// WHERE conditions that couldn't be pushed down to the API.
-    pub local_filters: Vec<LocalFilter>,
+    pub(crate) local_filters: Vec<LocalFilter>,
     /// ORDER BY clauses.
-    pub order_by: Vec<OrderByItem>,
+    pub(crate) order_by: Vec<OrderByItem>,
     /// LIMIT value.
-    pub limit: Option<u64>,
+    pub(crate) limit: Option<u64>,
     /// OFFSET value.
-    pub offset: Option<u64>,
+    pub(crate) offset: Option<u64>,
 }
 
 /// A column in the SELECT list.
@@ -69,9 +69,9 @@ pub enum Projection {
 /// A filter condition applied locally (not pushed to the API).
 #[derive(Debug)]
 pub struct LocalFilter {
-    pub column: ColumnName,
-    pub op: FilterOp,
-    pub value: FilterValue,
+    pub(crate) column: ColumnName,
+    pub(crate) op: FilterOp,
+    pub(crate) value: FilterValue,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -99,6 +99,6 @@ pub enum FilterValue {
 /// An ORDER BY item.
 #[derive(Debug)]
 pub struct OrderByItem {
-    pub column: ColumnName,
-    pub descending: bool,
+    pub(crate) column: ColumnName,
+    pub(crate) descending: bool,
 }

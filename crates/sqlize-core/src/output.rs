@@ -12,7 +12,7 @@ use crate::error::{Error, Result};
 pub fn result_set_to_toon(result: &ResultSet) -> Result<String> {
     let json = result_set_to_json_value(result);
     encode_array(json, &EncodeOptions::new())
-        .map_err(|e| Error::Spec(format!("TOON encoding error: {e}")))
+        .map_err(|e| Error::ToonEncode(e.to_string()))
 }
 
 /// Format a `ResultSet` as JSON (array of objects).

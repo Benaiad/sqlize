@@ -6,6 +6,13 @@ use crate::error::Result;
 /// Expects either a JSON array (list endpoints) or a single object.
 /// Each object's keys become columns; nested objects are flattened one level
 /// with `_` separators (matching the catalog's column naming).
+///
+/// NOTE: Column names and order are derived from the JSON response at runtime,
+/// not from the catalog's declared schema. This means the ResultSet's structure
+/// depends on whatever the API returns, not on what the VirtualTable promises.
+/// The `_table` parameter is unused — it should be used to project and validate
+/// response columns against the catalog schema. This is a known architectural
+/// gap: the catalog declares a contract, but the executor doesn't enforce it.
 pub fn json_to_result_set(json: &serde_json::Value, _table: &TableName) -> Result<ResultSet> {
     let items = match json {
         serde_json::Value::Array(arr) => arr.as_slice(),

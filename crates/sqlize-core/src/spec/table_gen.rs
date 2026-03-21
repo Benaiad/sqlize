@@ -105,7 +105,7 @@ fn try_build_table(
 
     let table_name = derive_table_name(path_str)?;
     let path_template = PathTemplate::new(path_str)
-        .map_err(|_| Error::Spec(format!("invalid path: {path_str}")))?;
+        .map_err(|_| Error::InvalidPath { path: path_str.to_owned(), reason: "invalid path template" })?;
 
     // Build columns from three sources:
     // 1. Path parameters → ColumnOrigin::PathParam
@@ -215,12 +215,12 @@ fn derive_table_name(path: &str) -> Result<crate::catalog::types::TableName> {
 
     let raw_name = segments
         .last()
-        .ok_or_else(|| Error::Spec(format!("cannot derive table name from path: {path}")))?;
+        .ok_or_else(|| Error::TableNameDerivation(path.to_owned()))?;
 
     let sanitized = raw_name.replace('-', "_").to_ascii_lowercase();
 
     crate::catalog::types::TableName::new(&sanitized)
-        .map_err(|_| Error::Spec(format!("cannot create valid table name from: {raw_name}")))
+        .map_err(|_| Error::TableNameDerivation(path.to_owned()))
 }
 
 /// Derive a qualified table name using parent context for disambiguation.
@@ -235,7 +235,7 @@ fn derive_qualified_table_name(path: &str) -> Result<crate::catalog::types::Tabl
         let child = segments[segments.len() - 1].replace('-', "_").to_ascii_lowercase();
         let qualified = format!("{parent}_{child}");
         crate::catalog::types::TableName::new(&qualified)
-            .map_err(|_| Error::Spec(format!("cannot create qualified table name from: {path}")))
+            .map_err(|_| Error::TableNameDerivation(path.to_owned()))
     } else {
         derive_table_name(path)
     }

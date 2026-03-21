@@ -35,10 +35,15 @@ async fn execute_source(
 ) -> Result<ResultSet> {
     match source {
         PlanSource::ApiCall(call) => {
+            let string_params: std::collections::HashMap<String, String> = call
+                .path_params
+                .iter()
+                .map(|(k, v)| (k.as_str().to_owned(), v.clone()))
+                .collect();
             let url = call
                 .endpoint
-                .url(&call.path_params)
-                .ok_or_else(|| Error::Spec("failed to resolve URL from path params".to_owned()))?;
+                .url(&string_params)
+                .ok_or(Error::UnresolvedUrl)?;
 
             let mut request = client
                 .get(&url)
@@ -67,7 +72,7 @@ async fn execute_source(
                 if let Ok(s) = remaining.to_str() {
                     if let Ok(n) = s.parse::<u32>() {
                         if n < 100 {
-                            tracing::warn!(remaining = n, "GitHub API rate limit running low");
+                            tracing::warn!(remaining = n, "API rate limit running low");
                         }
                     }
                 }
@@ -76,16 +81,18 @@ async fn execute_source(
             let status = resp.status();
             if !status.is_success() {
                 let body = resp.text().await.unwrap_or_default();
-                return Err(Error::Spec(format!(
-                    "API returned {status}: {body}"
-                )));
+                return Err(Error::ApiError {
+                    status: status.as_u16(),
+                    url,
+                    body,
+                });
             }
 
             let body: serde_json::Value = resp.json().await?;
             response::json_to_result_set(&body, &call.table)
         }
         PlanSource::Join { .. } => {
-            Err(Error::UnsupportedSql("JOINs not yet implemented in execution engine"))
+            Err(Error::UnsupportedSql("JOINs not yet implemented in execution engine".to_owned()))
         }
     }
 }

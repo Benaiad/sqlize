@@ -23,17 +23,17 @@ use super::plan::{
 /// - Column projections and SELECT *
 pub fn plan_query(sql: &str, catalog: &Catalog) -> Result<QueryPlan> {
     let statements = Parser::parse_sql(&GenericDialect {}, sql)
-        .map_err(|e| Error::UnsupportedSql(leak_parse_error(e)))?;
+        .map_err(|e| Error::SqlParse(e.to_string()))?;
 
     let statement = match statements.as_slice() {
         [single] => single,
-        [] => return Err(Error::UnsupportedSql("empty query")),
-        _ => return Err(Error::UnsupportedSql("multiple statements not supported")),
+        [] => return Err(Error::UnsupportedSql("empty query".to_owned().to_owned())),
+        _ => return Err(Error::UnsupportedSql("multiple statements not supported".to_owned().to_owned())),
     };
 
     let query = match statement {
         Statement::Query(q) => q,
-        _ => return Err(Error::UnsupportedSql("only SELECT queries are supported")),
+        _ => return Err(Error::UnsupportedSql("only SELECT queries are supported".to_owned().to_owned())),
     };
 
     plan_select(query, catalog)
@@ -42,12 +42,12 @@ pub fn plan_query(sql: &str, catalog: &Catalog) -> Result<QueryPlan> {
 fn plan_select(query: &Query, catalog: &Catalog) -> Result<QueryPlan> {
     // Reject CTEs, set operations, etc.
     if !query.with.is_none() {
-        return Err(Error::UnsupportedSql("WITH (CTEs) not supported"));
+        return Err(Error::UnsupportedSql("WITH (CTEs) not supported".to_owned().to_owned()));
     }
 
     let select = match query.body.as_ref() {
         SetExpr::Select(s) => s,
-        _ => return Err(Error::UnsupportedSql("only simple SELECT supported (no UNION, INTERSECT, etc.)")),
+        _ => return Err(Error::UnsupportedSql("only simple SELECT supported (no UNION, INTERSECT, etc.)".to_owned().to_owned())),
     };
 
     // Extract the source table
@@ -103,18 +103,18 @@ struct TableRef {
 fn extract_single_table(select: &Select) -> Result<TableRef> {
     if select.from.is_empty() {
         return Err(Error::UnsupportedSql(
-            "no FROM clause — sqlize queries require a table (e.g., SELECT * FROM issues WHERE ...)",
+            "no FROM clause — sqlize queries require a table (e.g., SELECT * FROM issues WHERE ...)".to_owned(),
         ));
     }
     if select.from.len() > 1 {
         return Err(Error::UnsupportedSql(
-            "multiple tables in FROM not yet supported — use one table per query",
+            "multiple tables in FROM not yet supported — use one table per query".to_owned(),
         ));
     }
 
     let from = &select.from[0];
     if !from.joins.is_empty() {
-        return Err(Error::UnsupportedSql("JOINs not yet supported"));
+        return Err(Error::UnsupportedSql("JOINs not yet supported".to_owned().to_owned()));
     }
 
     match &from.relation {
@@ -123,7 +123,7 @@ fn extract_single_table(select: &Select) -> Result<TableRef> {
             alias: alias.as_ref().map(|a| a.name.value.clone()),
         }),
         _ => Err(Error::UnsupportedSql(
-            "only simple table references supported (no subqueries, table functions, etc.)",
+            "only simple table references supported (no subqueries, table functions, etc.)".to_owned(),
         )),
     }
 }
@@ -141,7 +141,7 @@ fn resolve_table_name(name: &str) -> Result<TableName> {
 /// The result of classifying WHERE conditions against a table's column origins.
 struct ClassifiedConditions {
     /// Path parameter values (must all be present for the API call).
-    path_params: std::collections::HashMap<String, String>,
+    path_params: std::collections::HashMap<ColumnName, String>,
     /// Query parameters to push down to the API.
     query_params: std::collections::HashMap<String, String>,
     /// Conditions that must be evaluated locally after fetching.
@@ -188,7 +188,7 @@ fn classify_conditions(
                 // If we can't classify a condition, treat the whole expression
                 // as something we can't handle rather than silently dropping it.
                 return Err(Error::UnsupportedSql(
-                    "unsupported WHERE condition (only column = value with AND supported)",
+                    "unsupported WHERE condition (only column = value with AND supported)".to_owned(),
                 ));
             }
         }
@@ -202,7 +202,7 @@ fn classify_conditions(
 }
 
 enum ConditionClass {
-    PathParam { name: String, value: String },
+    PathParam { name: ColumnName, value: String },
     QueryParam { api_name: String, value: String },
     LocalFilter(LocalFilter),
 }
@@ -231,7 +231,7 @@ fn classify_single_condition(
 
     // Handle binary operations: column op value
     let Expr::BinaryOp { left, op, right } = expr else {
-        return Err(Error::UnsupportedSql("unsupported WHERE expression"));
+        return Err(Error::UnsupportedSql("unsupported WHERE expression".to_owned().to_owned()));
     };
 
     let col_name = extract_column_name(left)?;
@@ -249,7 +249,7 @@ fn classify_single_condition(
             ColumnOrigin::PathParam if filter_op == FilterOp::Eq => {
                 let value_str = filter_value_to_string(&filter_value);
                 Ok(ConditionClass::PathParam {
-                    name: col.name.as_str().to_owned(),
+                    name: col.name.clone(),
                     value: value_str,
                 })
             }
@@ -296,7 +296,7 @@ fn extract_column_name(expr: &Expr) -> Result<ColumnName> {
             ColumnName::new(&name)
         }
         _ => Err(Error::UnsupportedSql(
-            "left side of WHERE condition must be a column name",
+            "left side of WHERE condition must be a column name".to_owned(),
         )),
     }
 }
@@ -310,7 +310,7 @@ fn convert_op(op: &ast::BinaryOperator) -> Result<FilterOp> {
         ast::BinaryOperator::Gt => Ok(FilterOp::Gt),
         ast::BinaryOperator::GtEq => Ok(FilterOp::GtEq),
         _ => Err(Error::UnsupportedSql(
-            "unsupported operator (supported: =, !=, <, <=, >, >=)",
+            "unsupported operator (supported: =, !=, <, <=, >, >=)".to_owned(),
         )),
     }
 }
@@ -327,15 +327,15 @@ fn extract_value(expr: &Expr) -> Result<FilterValue> {
                 } else if let Ok(f) = n.parse::<f64>() {
                     Ok(FilterValue::Float(f))
                 } else {
-                    Err(Error::UnsupportedSql("unparseable number"))
+                    Err(Error::UnsupportedSql("unparseable number".to_owned().to_owned()))
                 }
             }
             SqlValue::Boolean(b) => Ok(FilterValue::Boolean(*b)),
             SqlValue::Null => Ok(FilterValue::Null),
-            _ => Err(Error::UnsupportedSql("unsupported value type in WHERE")),
+            _ => Err(Error::UnsupportedSql("unsupported value type in WHERE".to_owned().to_owned())),
         },
         _ => Err(Error::UnsupportedSql(
-            "right side of WHERE condition must be a literal value",
+            "right side of WHERE condition must be a literal value".to_owned(),
         )),
     }
 }
@@ -359,7 +359,7 @@ fn validate_required_params(
     classified: &ClassifiedConditions,
 ) -> Result<()> {
     for col in table.required_params() {
-        if !classified.path_params.contains_key(col.name.as_str()) {
+        if !classified.path_params.contains_key(&col.name) {
             return Err(Error::MissingRequiredParam {
                 table: table.name.clone(),
                 column: col.name.clone(),
@@ -414,7 +414,7 @@ fn plan_projections(
                 });
             }
             _ => return Err(Error::UnsupportedSql(
-                "unsupported SELECT item (only columns, aliases, and * supported)",
+                "unsupported SELECT item (only columns, aliases, and * supported)".to_owned(),
             )),
         }
     }
@@ -434,7 +434,7 @@ fn plan_order_by(order_by: &Option<ast::OrderBy>) -> Result<Vec<OrderByItem>> {
     let exprs = match &ob.kind {
         OrderByKind::Expressions(exprs) => exprs,
         OrderByKind::All(_) => {
-            return Err(Error::UnsupportedSql("ORDER BY ALL not supported"))
+            return Err(Error::UnsupportedSql("ORDER BY ALL not supported".to_owned().to_owned()))
         }
     };
 
@@ -486,15 +486,6 @@ fn expr_to_u64(expr: &Expr) -> Option<u64> {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/// Leak a parse error message into a &'static str.
-/// This is intentional: parse errors are rare, and Error::UnsupportedSql
-/// needs a static lifetime. The leaked memory is bounded by the number
-/// of distinct parse errors a user can trigger in a session.
-fn leak_parse_error(e: sqlparser::parser::ParserError) -> &'static str {
-    let msg = e.to_string();
-    Box::leak(msg.into_boxed_str())
-}
 
 /// Format a query plan for human-readable EXPLAIN output.
 pub fn explain(plan: &QueryPlan) -> String {
@@ -634,8 +625,10 @@ mod tests {
             panic!("expected ApiCall");
         };
 
-        assert_eq!(call.path_params.get("owner").unwrap(), "anthropics");
-        assert_eq!(call.path_params.get("repo").unwrap(), "claude-code");
+        let owner = ColumnName::new("owner").unwrap();
+        let repo = ColumnName::new("repo").unwrap();
+        assert_eq!(call.path_params.get(&owner).unwrap(), "anthropics");
+        assert_eq!(call.path_params.get(&repo).unwrap(), "claude-code");
         assert_eq!(call.query_params.get("state").unwrap(), "open");
         assert_eq!(plan.post.limit, Some(10));
         assert_eq!(plan.post.projections.len(), 2);
