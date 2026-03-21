@@ -13,7 +13,10 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
-rustyline = "17"
+reedline = "0.45"
+crossterm = "0.29"
+nu-ansi-term = "0.50"
+dirs = "6"
 terminal_size = "0.4"
 tabled = "0.18"
 rmcp = { version = "1.2", features = ["server", "transport-io"] }

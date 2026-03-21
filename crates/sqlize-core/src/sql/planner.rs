@@ -101,9 +101,14 @@ struct TableRef {
 }
 
 fn extract_single_table(select: &Select) -> Result<TableRef> {
-    if select.from.len() != 1 {
+    if select.from.is_empty() {
         return Err(Error::UnsupportedSql(
-            "exactly one table required in FROM clause",
+            "no FROM clause — sqlize queries require a table (e.g., SELECT * FROM issues WHERE ...)",
+        ));
+    }
+    if select.from.len() > 1 {
+        return Err(Error::UnsupportedSql(
+            "multiple tables in FROM not yet supported — use one table per query",
         ));
     }
 
