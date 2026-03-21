@@ -105,7 +105,7 @@ The planner classifies each `WHERE` condition:
 | `ORDER BY created_at DESC` | Post-processing | Applied locally after fetch |
 | `LIMIT 10` | Post-processing | Applied locally after fetch |
 
-Path parameters are required — omitting them is a compile-time error, not a runtime surprise.
+Path parameters are required — omitting them fails at query planning, before any HTTP call is made.
 
 ## Why
 
