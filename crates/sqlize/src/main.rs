@@ -121,7 +121,8 @@ async fn main() -> anyhow::Result<()> {
                 spec_info.base_url,
             );
 
-            repl::run(Arc::new(catalog), auth, cli.format).await;
+            let client = sqlize_core::exec::Client::new();
+            repl::run(Arc::new(catalog), auth, client, cli.format).await;
         }
     }
 

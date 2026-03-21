@@ -1,4 +1,4 @@
-use crate::catalog::types::{ColumnName, ResultSet, Row, TableName, Value};
+use crate::catalog::types::{ColumnName, ResultSet, Row, TableName, Value, sanitize_name};
 use crate::error::Result;
 
 /// Convert a JSON API response into a `ResultSet`.
@@ -37,12 +37,12 @@ fn derive_columns(obj: &serde_json::Value) -> Vec<ColumnName> {
     };
 
     for (key, value) in map {
-        let col_base = sanitize_key(key);
+        let col_base = sanitize_name(key);
 
         if let serde_json::Value::Object(nested) = value {
             // Flatten one level: user.login → user_login
             for nested_key in nested.keys() {
-                let col_name = format!("{}_{}", col_base, sanitize_key(nested_key));
+                let col_name = format!("{}_{}", col_base, sanitize_name(nested_key));
                 if let Ok(cn) = ColumnName::new(&col_name) {
                     columns.push(cn);
                 }
@@ -66,11 +66,11 @@ fn extract_row(obj: &serde_json::Value, columns: &[ColumnName]) -> Row {
         std::collections::HashMap::new();
 
     for (key, value) in map {
-        let col_base = sanitize_key(key);
+        let col_base = sanitize_name(key);
 
         if let serde_json::Value::Object(nested) = value {
             for (nested_key, nested_val) in nested {
-                let col_name = format!("{}_{}", col_base, sanitize_key(nested_key));
+                let col_name = format!("{}_{}", col_base, sanitize_name(nested_key));
                 flat.insert(col_name, nested_val);
             }
         } else {
@@ -107,24 +107,6 @@ fn json_value_to_value(v: &serde_json::Value) -> Value {
         // Arrays and nested objects beyond first level become JSON values
         other => Value::Json(other.clone()),
     }
-}
-
-/// Sanitize a JSON key to match our column naming convention.
-fn sanitize_key(key: &str) -> String {
-    let mut result = String::with_capacity(key.len() + 4);
-    for (i, ch) in key.chars().enumerate() {
-        if ch == '-' || ch == '.' {
-            result.push('_');
-        } else if ch.is_ascii_uppercase() {
-            if i > 0 {
-                result.push('_');
-            }
-            result.push(ch.to_ascii_lowercase());
-        } else {
-            result.push(ch);
-        }
-    }
-    result
 }
 
 #[cfg(test)]

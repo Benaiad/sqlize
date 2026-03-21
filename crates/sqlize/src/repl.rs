@@ -15,7 +15,7 @@ use tabled::settings::{self, Width};
 use sqlize_core::catalog::Catalog;
 use sqlize_core::catalog::ddl::{catalog_ddl, single_table_ddl};
 use sqlize_core::catalog::types::{TableName, Value};
-use sqlize_core::exec::{AuthConfig, execute};
+use sqlize_core::exec::{AuthConfig, Client, execute};
 use sqlize_core::output::{result_set_to_json, result_set_to_toon};
 use sqlize_core::sql::planner::{explain, plan_query};
 
@@ -116,7 +116,7 @@ impl Highlighter for SqlHighlighter {
         let mut styled = StyledText::new();
         let keyword_style = Style::new().fg(Color::Cyan).bold();
         let string_style = Style::new().fg(Color::Green);
-        let _number_style = Style::new().fg(Color::Yellow);
+        let number_style = Style::new().fg(Color::Yellow);
         let default_style = Style::new();
 
         let mut chars = line.chars().peekable();
@@ -126,7 +126,7 @@ impl Highlighter for SqlHighlighter {
             if ch == '\'' {
                 // String literal
                 if !token.is_empty() {
-                    push_token(&mut styled, &token, keyword_style, default_style);
+                    push_token(&mut styled, &token, keyword_style, number_style, default_style);
                     token.clear();
                 }
                 let mut s = String::new();
@@ -140,7 +140,7 @@ impl Highlighter for SqlHighlighter {
                 styled.push((string_style, s));
             } else if ch.is_ascii_whitespace() || ch == ',' || ch == '(' || ch == ')' || ch == ';' {
                 if !token.is_empty() {
-                    push_token(&mut styled, &token, keyword_style, default_style);
+                    push_token(&mut styled, &token, keyword_style, number_style, default_style);
                     token.clear();
                 }
                 styled.push((default_style, chars.next().unwrap().to_string()));
@@ -150,19 +150,20 @@ impl Highlighter for SqlHighlighter {
         }
 
         if !token.is_empty() {
-            push_token(&mut styled, &token, keyword_style, default_style);
+            push_token(&mut styled, &token, keyword_style, number_style, default_style);
         }
 
         fn push_token(
             styled: &mut StyledText,
             token: &str,
             keyword_style: Style,
+            number_style: Style,
             default_style: Style,
         ) {
             if SQL_KEYWORDS.contains(&token.to_ascii_uppercase().as_str()) {
                 styled.push((keyword_style, token.to_owned()));
             } else if token.chars().all(|c| c.is_ascii_digit() || c == '.') {
-                styled.push((Style::new().fg(Color::Yellow), token.to_owned()));
+                styled.push((number_style, token.to_owned()));
             } else {
                 styled.push((default_style, token.to_owned()));
             }
@@ -182,31 +183,32 @@ struct SqlCompleter {
 
 impl SqlCompleter {
     fn from_catalog(catalog: &Catalog) -> Self {
-        let mut words: Vec<String> = SQL_KEYWORDS.iter().map(|k| k.to_string()).collect();
+        let mut seen = std::collections::HashSet::new();
+        let mut words = Vec::new();
 
-        // Add lowercase versions too — LLMs and users type lowercase SQL
+        let mut add = |s: String| {
+            if seen.insert(s.to_ascii_uppercase()) {
+                words.push(s);
+            }
+        };
+
         for kw in SQL_KEYWORDS {
-            words.push(kw.to_ascii_lowercase());
+            add(kw.to_string());
+            add(kw.to_ascii_lowercase());
         }
 
-        // Table names
         for table in catalog.tables() {
-            words.push(table.name.as_str().to_owned());
-
-            // Column names
+            add(table.name.as_str().to_owned());
             for col in &table.columns {
-                let name = col.name.as_str().to_owned();
-                if !words.contains(&name) {
-                    words.push(name);
-                }
+                add(col.name.as_str().to_owned());
             }
         }
 
-        // REPL commands
-        words.extend(["SHOW TABLES", "DESCRIBE", "EXPLAIN", "SCHEMA", "DDL"].map(String::from));
+        for cmd in ["SHOW TABLES", "DESCRIBE", "EXPLAIN", "SCHEMA", "DDL"] {
+            add(cmd.to_owned());
+        }
 
         words.sort();
-        words.dedup();
         Self { words }
     }
 }
@@ -258,7 +260,7 @@ impl Completer for SqlCompleter {
 // REPL loop
 // ---------------------------------------------------------------------------
 
-pub async fn run(catalog: Arc<Catalog>, auth: AuthConfig, format: OutputFormat) {
+pub async fn run(catalog: Arc<Catalog>, auth: AuthConfig, client: Client, format: OutputFormat) {
     eprintln!("Type SQL (end with ;), or: SHOW TABLES, DESCRIBE <table>, EXPLAIN <sql>");
     eprintln!("Ctrl+D to exit.\n");
 
@@ -308,7 +310,7 @@ pub async fn run(catalog: Arc<Catalog>, auth: AuthConfig, format: OutputFormat) 
                 if trimmed.is_empty() {
                     continue;
                 }
-                dispatch(&catalog, &auth, trimmed, format).await;
+                dispatch(&catalog, &auth, &client, trimmed, format).await;
             }
             Ok(Signal::CtrlC) => continue,
             Ok(Signal::CtrlD) => break,
@@ -320,7 +322,7 @@ pub async fn run(catalog: Arc<Catalog>, auth: AuthConfig, format: OutputFormat) 
     }
 }
 
-async fn dispatch(catalog: &Catalog, auth: &AuthConfig, input: &str, format: OutputFormat) {
+async fn dispatch(catalog: &Catalog, auth: &AuthConfig, client: &Client, input: &str, format: OutputFormat) {
     let upper = input.to_ascii_uppercase();
 
     if upper == "SHOW TABLES" || upper == "\\D" {
@@ -336,7 +338,7 @@ async fn dispatch(catalog: &Catalog, auth: &AuthConfig, input: &str, format: Out
     } else if upper == "QUIT" || upper == "EXIT" || upper == "\\Q" {
         std::process::exit(0);
     } else {
-        handle_query(catalog, auth, input, format).await;
+        handle_query(catalog, auth, client, input, format).await;
     }
 }
 
@@ -386,7 +388,7 @@ fn handle_explain(catalog: &Catalog, sql: &str) {
     }
 }
 
-async fn handle_query(catalog: &Catalog, auth: &AuthConfig, sql: &str, format: OutputFormat) {
+async fn handle_query(catalog: &Catalog, auth: &AuthConfig, client: &Client, sql: &str, format: OutputFormat) {
     let plan = match plan_query(sql, catalog) {
         Ok(p) => p,
         Err(e) => {
@@ -395,7 +397,7 @@ async fn handle_query(catalog: &Catalog, auth: &AuthConfig, sql: &str, format: O
         }
     };
 
-    let result = match execute(&plan, auth).await {
+    let result = match execute(&plan, auth, client).await {
         Ok(r) => r,
         Err(e) => {
             eprintln!("Error: {e}");

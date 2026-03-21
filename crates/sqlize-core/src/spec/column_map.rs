@@ -1,6 +1,6 @@
 use openapiv3::{OpenAPI, ReferenceOr, Schema, SchemaKind, Type as OaType};
 
-use crate::catalog::types::{Column, ColumnName, ColumnOrigin, ColumnType};
+use crate::catalog::types::{Column, ColumnName, ColumnOrigin, ColumnType, sanitize_name};
 use crate::error::Result;
 
 /// Extract columns from a response schema, flattening one level of nesting.
@@ -152,25 +152,6 @@ fn resolve_ref<'a>(spec: &'a OpenAPI, reference: &str) -> Option<&'a Schema> {
         // Don't follow chains of refs to keep this simple and avoid cycles.
         ReferenceOr::Reference { .. } => None,
     }
-}
-
-/// Sanitize an API field name to a valid column name.
-/// `camelCase` → `camel_case`, hyphens → underscores, uppercase → lowercase.
-pub(super) fn sanitize_name(name: &str) -> String {
-    let mut result = String::with_capacity(name.len() + 4);
-    for (i, ch) in name.chars().enumerate() {
-        if ch == '-' || ch == '.' {
-            result.push('_');
-        } else if ch.is_ascii_uppercase() {
-            if i > 0 {
-                result.push('_');
-            }
-            result.push(ch.to_ascii_lowercase());
-        } else {
-            result.push(ch);
-        }
-    }
-    result
 }
 
 #[cfg(test)]

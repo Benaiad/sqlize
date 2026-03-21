@@ -17,6 +17,7 @@ use sqlize_core::sql::planner::{explain, plan_query};
 pub struct SqlizeServer {
     catalog: Arc<Catalog>,
     auth: AuthConfig,
+    client: sqlize_core::exec::Client,
     instructions: String,
     tool_router: ToolRouter<Self>,
 }
@@ -35,6 +36,7 @@ impl SqlizeServer {
         Self {
             catalog,
             auth,
+            client: sqlize_core::exec::Client::new(),
             instructions,
             tool_router: Self::tool_router(),
         }
@@ -123,7 +125,7 @@ impl SqlizeServer {
             Err(e) => return format!("Planning error: {e}"),
         };
 
-        let result = match execute(&plan, &self.auth).await {
+        let result = match execute(&plan, &self.auth, &self.client).await {
             Ok(r) => r,
             Err(e) => return format!("Execution error: {e}"),
         };

@@ -273,6 +273,29 @@ impl VirtualTable {
 }
 
 // ---------------------------------------------------------------------------
+// Name sanitization
+// ---------------------------------------------------------------------------
+
+/// Sanitize an API field name to a valid column/table name.
+/// `camelCase` → `camel_case`, hyphens/dots → underscores, uppercase → lowercase.
+pub fn sanitize_name(name: &str) -> String {
+    let mut result = String::with_capacity(name.len() + 4);
+    for (i, ch) in name.chars().enumerate() {
+        if ch == '-' || ch == '.' {
+            result.push('_');
+        } else if ch.is_ascii_uppercase() {
+            if i > 0 {
+                result.push('_');
+            }
+            result.push(ch.to_ascii_lowercase());
+        } else {
+            result.push(ch);
+        }
+    }
+    result
+}
+
+// ---------------------------------------------------------------------------
 // Result types
 // ---------------------------------------------------------------------------
 

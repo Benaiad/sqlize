@@ -121,9 +121,15 @@ fn try_build_table(
         }
     }
 
-    // Response fields
+    // Response fields — skip columns that already exist as params
+    let existing_names: std::collections::HashSet<_> =
+        columns.iter().map(|c| c.name.as_str().to_owned()).collect();
     let response_columns = columns_from_schema(spec, item_schema, "")?;
-    columns.extend(response_columns);
+    columns.extend(
+        response_columns
+            .into_iter()
+            .filter(|c| !existing_names.contains(c.name.as_str())),
+    );
 
     let description = operation
         .summary
@@ -311,7 +317,7 @@ fn param_to_column(
     let (data, origin) = match param {
         Parameter::Path { parameter_data, .. } => (parameter_data, ColumnOrigin::PathParam),
         Parameter::Query { parameter_data, .. } => {
-            let col_name = super::column_map::sanitize_name(&parameter_data.name);
+            let col_name = crate::catalog::types::sanitize_name(&parameter_data.name);
             let api_name = if col_name != parameter_data.name {
                 Some(parameter_data.name.clone())
             } else {
@@ -323,7 +329,7 @@ fn param_to_column(
         _ => return Ok(None),
     };
 
-    let col_name_str = super::column_map::sanitize_name(&data.name);
+    let col_name_str = crate::catalog::types::sanitize_name(&data.name);
     let col_name = match ColumnName::new(&col_name_str) {
         Ok(n) => n,
         Err(_) => return Ok(None),

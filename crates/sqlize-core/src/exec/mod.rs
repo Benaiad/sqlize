@@ -1,7 +1,7 @@
 mod postprocess;
 mod response;
 
-use reqwest::Client;
+pub use reqwest::Client;
 use reqwest::header::{ACCEPT, AUTHORIZATION, USER_AGENT};
 
 use crate::catalog::types::ResultSet;
@@ -16,9 +16,14 @@ pub struct AuthConfig {
 }
 
 /// Execute a query plan against live APIs.
-pub async fn execute(plan: &QueryPlan, auth: &AuthConfig) -> Result<ResultSet> {
-    let client = Client::new();
-    let mut result = execute_source(&plan.source, &client, auth).await?;
+///
+/// Accepts a shared `reqwest::Client` for connection reuse across queries.
+pub async fn execute(
+    plan: &QueryPlan,
+    auth: &AuthConfig,
+    client: &Client,
+) -> Result<ResultSet> {
+    let mut result = execute_source(&plan.source, client, auth).await?;
     postprocess::apply(&plan.post, &mut result);
     Ok(result)
 }
@@ -45,14 +50,11 @@ async fn execute_source(
             }
 
             // Push query params to the API
-            let mut query_params: Vec<(&str, &str)> = call
+            let query_params: Vec<(&str, &str)> = call
                 .query_params
                 .iter()
                 .map(|(k, v)| (k.as_str(), v.as_str()))
                 .collect();
-
-            // Default to max page size for efficiency
-            query_params.push(("per_page", "100"));
 
             request = request.query(&query_params);
 
