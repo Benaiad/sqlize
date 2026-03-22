@@ -9,15 +9,10 @@ pub struct QueryPlan {
     pub(crate) post: PostProcessing,
 }
 
-/// Where rows come from — a single API call or a join of two sources.
+/// Where rows come from.
 #[derive(Debug)]
 pub enum PlanSource {
     ApiCall(ApiCall),
-    Join {
-        left: Box<PlanSource>,
-        right: Box<PlanSource>,
-        on: JoinCondition,
-    },
 }
 
 /// A single API call to execute.
@@ -29,13 +24,6 @@ pub struct ApiCall {
     pub(crate) path_params: HashMap<ColumnName, String>,
     /// Query parameter values to push down to the API (e.g., state = 'open').
     pub(crate) query_params: HashMap<String, String>,
-}
-
-/// A join condition: left_col = right_col.
-#[derive(Debug)]
-pub struct JoinCondition {
-    pub left_col: ColumnName,
-    pub right_col: ColumnName,
 }
 
 /// Operations applied locally after fetching rows from the API.
@@ -58,7 +46,6 @@ pub struct PostProcessing {
 pub enum Projection {
     /// A named column, optionally aliased.
     Column {
-        table: Option<TableName>,
         name: ColumnName,
         alias: Option<String>,
     },

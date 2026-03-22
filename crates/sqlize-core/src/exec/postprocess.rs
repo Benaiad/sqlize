@@ -251,12 +251,10 @@ mod tests {
         let mut result = make_result();
         let projections = vec![
             Projection::Column {
-                table: None,
                 name: ColumnName::new("name").unwrap(),
                 alias: None,
             },
             Projection::Column {
-                table: None,
                 name: ColumnName::new("id").unwrap(),
                 alias: Some("issue_id".into()),
             },

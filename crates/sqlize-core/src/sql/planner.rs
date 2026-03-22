@@ -27,13 +27,13 @@ pub fn plan_query(sql: &str, catalog: &Catalog) -> Result<QueryPlan> {
 
     let statement = match statements.as_slice() {
         [single] => single,
-        [] => return Err(Error::UnsupportedSql("empty query".to_owned().to_owned())),
-        _ => return Err(Error::UnsupportedSql("multiple statements not supported".to_owned().to_owned())),
+        [] => return Err(Error::UnsupportedSql("empty query".to_owned())),
+        _ => return Err(Error::UnsupportedSql("multiple statements not supported".to_owned())),
     };
 
     let query = match statement {
         Statement::Query(q) => q,
-        _ => return Err(Error::UnsupportedSql("only SELECT queries are supported".to_owned().to_owned())),
+        _ => return Err(Error::UnsupportedSql("only SELECT queries are supported".to_owned())),
     };
 
     plan_select(query, catalog)
@@ -41,13 +41,13 @@ pub fn plan_query(sql: &str, catalog: &Catalog) -> Result<QueryPlan> {
 
 fn plan_select(query: &Query, catalog: &Catalog) -> Result<QueryPlan> {
     // Reject CTEs, set operations, etc.
-    if !query.with.is_none() {
-        return Err(Error::UnsupportedSql("WITH (CTEs) not supported".to_owned().to_owned()));
+    if query.with.is_some() {
+        return Err(Error::UnsupportedSql("WITH (CTEs) not supported".to_owned()));
     }
 
     let select = match query.body.as_ref() {
         SetExpr::Select(s) => s,
-        _ => return Err(Error::UnsupportedSql("only simple SELECT supported (no UNION, INTERSECT, etc.)".to_owned().to_owned())),
+        _ => return Err(Error::UnsupportedSql("only simple SELECT supported (no UNION, INTERSECT, etc.)".to_owned())),
     };
 
     // Extract the source table
@@ -96,8 +96,6 @@ fn plan_select(query: &Query, catalog: &Catalog) -> Result<QueryPlan> {
 
 struct TableRef {
     name: String,
-    #[allow(dead_code)] // will be used for JOIN alias resolution
-    alias: Option<String>,
 }
 
 fn extract_single_table(select: &Select) -> Result<TableRef> {
@@ -114,13 +112,12 @@ fn extract_single_table(select: &Select) -> Result<TableRef> {
 
     let from = &select.from[0];
     if !from.joins.is_empty() {
-        return Err(Error::UnsupportedSql("JOINs not yet supported".to_owned().to_owned()));
+        return Err(Error::UnsupportedSql("JOINs not yet supported".to_owned()));
     }
 
     match &from.relation {
-        TableFactor::Table { name, alias, .. } => Ok(TableRef {
+        TableFactor::Table { name, .. } => Ok(TableRef {
             name: name.to_string(),
-            alias: alias.as_ref().map(|a| a.name.value.clone()),
         }),
         _ => Err(Error::UnsupportedSql(
             "only simple table references supported (no subqueries, table functions, etc.)".to_owned(),
@@ -231,7 +228,7 @@ fn classify_single_condition(
 
     // Handle binary operations: column op value
     let Expr::BinaryOp { left, op, right } = expr else {
-        return Err(Error::UnsupportedSql("unsupported WHERE expression".to_owned().to_owned()));
+        return Err(Error::UnsupportedSql("unsupported WHERE expression".to_owned()));
     };
 
     let col_name = extract_column_name(left)?;
@@ -327,7 +324,7 @@ fn extract_value(expr: &Expr) -> Result<FilterValue> {
                 } else if let Ok(f) = n.parse::<f64>() {
                     Ok(FilterValue::Float(f))
                 } else {
-                    Err(Error::UnsupportedSql("unparseable number".to_owned().to_owned()))
+                    Err(Error::UnsupportedSql("unparseable number".to_owned()))
                 }
             }
             SqlValue::Boolean(b) => Ok(FilterValue::Boolean(*b)),
@@ -408,7 +405,6 @@ fn plan_projections(
                 let col_name = extract_column_name(expr)?;
                 validate_column(table, &col_name)?;
                 projections.push(Projection::Column {
-                    table: None,
                     name: col_name,
                     alias: None,
                 });
@@ -417,7 +413,6 @@ fn plan_projections(
                 let col_name = extract_column_name(expr)?;
                 validate_column(table, &col_name)?;
                 projections.push(Projection::Column {
-                    table: None,
                     name: col_name,
                     alias: Some(alias.value.clone()),
                 });
@@ -554,11 +549,6 @@ fn explain_source(source: &PlanSource, out: &mut String, indent: usize) {
             if !call.query_params.is_empty() {
                 out.push_str(&format!("{pad}  query_params: {:?}\n", call.query_params));
             }
-        }
-        PlanSource::Join { left, right, on } => {
-            out.push_str(&format!("{pad}Join on {} = {}:\n", on.left_col, on.right_col));
-            explain_source(left, out, indent + 2);
-            explain_source(right, out, indent + 2);
         }
     }
 }

@@ -3,7 +3,7 @@ pub mod types;
 
 use std::collections::BTreeMap;
 
-use types::{ColumnName, TableName, VirtualTable};
+use types::{TableName, VirtualTable};
 
 use crate::error::{Error, Result};
 
@@ -51,19 +51,4 @@ impl Catalog {
             .ok_or_else(|| Error::TableNotFound(name.clone()))
     }
 
-    /// Look up a column within a table, returning a structured error if not found.
-    pub fn require_column(
-        &self,
-        table: &TableName,
-        column: &ColumnName,
-    ) -> Result<&types::Column> {
-        let t = self.require(table)?;
-        t.columns
-            .iter()
-            .find(|c| c.name == *column)
-            .ok_or_else(|| Error::ColumnNotFound {
-                table: table.clone(),
-                column: column.clone(),
-            })
-    }
 }

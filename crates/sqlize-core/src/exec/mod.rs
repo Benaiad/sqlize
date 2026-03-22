@@ -47,9 +47,6 @@ async fn execute_source(
 ) -> Result<ResultSet> {
     match source {
         PlanSource::ApiCall(call) => execute_paginated(call, client, auth, catalog, limit).await,
-        PlanSource::Join { .. } => {
-            Err(Error::UnsupportedSql("JOINs not yet implemented in execution engine".to_owned()))
-        }
     }
 }
 

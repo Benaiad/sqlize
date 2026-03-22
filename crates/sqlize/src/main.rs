@@ -68,22 +68,15 @@ async fn main() -> anyhow::Result<()> {
             std::process::exit(1);
         });
 
-    let tag_strs = cli
-        .tags
-        .as_ref()
-        .or_else(|| None) // tags from env handled below
-        .map(|tags| tags.iter().map(|s| s.as_str()).collect::<Vec<_>>());
-
-    // Also check SQLIZE_TAGS env var
-    let env_tags: Option<Vec<String>> = std::env::var("SQLIZE_TAGS")
-        .ok()
-        .map(|s| s.split(',').map(|t| t.trim().to_owned()).collect());
-
-    let effective_tags: Option<Vec<&str>> = tag_strs.or_else(|| {
-        env_tags
-            .as_ref()
-            .map(|tags| tags.iter().map(|s| s.as_str()).collect())
+    // CLI --tags takes priority, then SQLIZE_TAGS env var
+    let tags: Option<Vec<String>> = cli.tags.or_else(|| {
+        std::env::var("SQLIZE_TAGS")
+            .ok()
+            .map(|s| s.split(',').map(|t| t.trim().to_owned()).collect())
     });
+    let effective_tags: Option<Vec<&str>> = tags
+        .as_ref()
+        .map(|v| v.iter().map(|s| s.as_str()).collect());
 
     let (catalog, spec_info) =
         sqlize_core::spec::load_catalog(&spec_path, effective_tags.as_deref())

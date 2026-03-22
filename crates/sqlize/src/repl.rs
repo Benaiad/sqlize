@@ -13,7 +13,7 @@ use tabled::builder::Builder;
 use tabled::settings::{self, Width};
 
 use sqlize_core::catalog::Catalog;
-use sqlize_core::catalog::ddl::{catalog_ddl, single_table_ddl};
+use sqlize_core::catalog::ddl::{catalog_ddl, table_ddl};
 use sqlize_core::catalog::types::{ResultSet, TableName, Value};
 use sqlize_core::exec::{AuthConfig, Client, execute};
 use sqlize_core::output::{result_set_to_json, result_set_to_toon};
@@ -378,7 +378,7 @@ fn handle_describe(catalog: &Catalog, name: &str) {
         return;
     };
 
-    println!("{}", single_table_ddl(table));
+    println!("{}", table_ddl(table));
 }
 
 fn handle_explain(catalog: &Catalog, sql: &str) {

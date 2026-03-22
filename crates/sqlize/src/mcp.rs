@@ -8,7 +8,7 @@ use rmcp::schemars;
 use rmcp::tool;
 
 use sqlize_core::catalog::Catalog;
-use sqlize_core::catalog::ddl::single_table_ddl;
+use sqlize_core::catalog::ddl::table_ddl;
 use sqlize_core::catalog::types::TableName;
 use sqlize_core::exec::{AuthConfig, execute};
 use sqlize_core::output::{result_set_to_json, result_set_to_toon};
@@ -78,7 +78,7 @@ impl SqlizeServer {
                     return format!("Error: invalid table name '{name}'");
                 };
                 match self.catalog.get(&table_name) {
-                    Some(table) => single_table_ddl(table),
+                    Some(table) => table_ddl(table),
                     None => {
                         let available: Vec<&str> = self
                             .catalog

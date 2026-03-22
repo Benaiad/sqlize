@@ -5,7 +5,7 @@ use super::types::{ColumnOrigin, VirtualTable};
 
 /// Generate a `CREATE TABLE` DDL statement for a single virtual table.
 /// Includes column descriptions as inline comments for LLM consumption.
-fn table_ddl(table: &VirtualTable) -> String {
+pub fn table_ddl(table: &VirtualTable) -> String {
     let mut out = String::with_capacity(512);
 
     // Table-level comment
@@ -70,11 +70,6 @@ pub fn catalog_ddl(catalog: &Catalog) -> String {
         .join("\n")
 }
 
-/// Generate DDL for a single table by reference.
-pub fn single_table_ddl(table: &VirtualTable) -> String {
-    table_ddl(table)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -133,7 +128,7 @@ mod tests {
 
     #[test]
     fn ddl_contains_table_name_and_columns() {
-        let ddl = single_table_ddl(&test_table());
+        let ddl = table_ddl(&test_table());
         assert!(ddl.contains("CREATE TABLE issues ("));
         assert!(ddl.contains("owner TEXT NOT NULL"));
         assert!(ddl.contains("title TEXT NOT NULL"));
@@ -143,7 +138,7 @@ mod tests {
 
     #[test]
     fn ddl_contains_required_where_comment() {
-        let ddl = single_table_ddl(&test_table());
+        let ddl = table_ddl(&test_table());
         assert!(ddl.contains("Required WHERE clause: owner AND repo"));
     }
 }
