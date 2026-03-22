@@ -65,7 +65,7 @@ fn body_url_field(ctx: &PageContext<'_>) -> Option<String> {
 fn cursor_based(ctx: &PageContext<'_>) -> Option<String> {
     let obj = ctx.body.as_object()?;
 
-    // Check for has_more: true
+    // Check for has_more / hasMore / has_next_page: true
     let has_more = obj.get("has_more")
         .or_else(|| obj.get("hasMore"))
         .or_else(|| obj.get("has_next_page"))?
@@ -75,23 +75,65 @@ fn cursor_based(ctx: &PageContext<'_>) -> Option<String> {
         return None;
     }
 
-    // Get the last item's ID from the data array
-    let items = ctx.data.as_array()?;
-    let last_item = items.last()?;
-    let cursor = last_item.get("id")
-        .and_then(|v| v.as_str().map(|s| s.to_owned()))
-        .or_else(|| last_item.get("id").and_then(|v| v.as_i64().map(|n| n.to_string())))?;
+    // Determine cursor value. Priority:
+    // 1. Explicit cursor field in the response body (next_cursor, cursor, end_cursor)
+    // 2. Last item's id field (Stripe and most REST APIs)
+    let cursor = extract_explicit_cursor(obj)
+        .or_else(|| extract_last_item_id(ctx.data))?;
 
-    // Determine the cursor parameter name
-    let cursor_param = if obj.contains_key("has_more") || obj.contains_key("hasMore") {
-        "starting_after" // Stripe convention
-    } else {
-        "after" // Generic cursor convention
-    };
+    // Determine the cursor parameter name from the response shape
+    let cursor_param = detect_cursor_param(obj);
 
     // Append cursor to URL
     let separator = if ctx.current_url.contains('?') { "&" } else { "?" };
     Some(format!("{}{separator}{cursor_param}={cursor}", ctx.current_url))
+}
+
+/// Look for an explicit cursor/token in the response body.
+fn extract_explicit_cursor(obj: &serde_json::Map<String, serde_json::Value>) -> Option<String> {
+    for key in ["next_cursor", "cursor", "end_cursor", "ending_before",
+                "next_page_token", "pageToken", "continuation_token"] {
+        if let Some(val) = obj.get(key) {
+            match val {
+                serde_json::Value::String(s) if !s.is_empty() => return Some(s.clone()),
+                serde_json::Value::Number(n) => return Some(n.to_string()),
+                _ => {}
+            }
+        }
+    }
+    None
+}
+
+/// Fall back to the last item's ID in the data array.
+fn extract_last_item_id(data: &serde_json::Value) -> Option<String> {
+    let items = data.as_array()?;
+    let last = items.last()?;
+    for key in ["id", "_id", "uuid"] {
+        if let Some(val) = last.get(key) {
+            match val {
+                serde_json::Value::String(s) => return Some(s.clone()),
+                serde_json::Value::Number(n) => return Some(n.to_string()),
+                _ => {}
+            }
+        }
+    }
+    None
+}
+
+/// Detect the right query parameter name for the cursor.
+fn detect_cursor_param(obj: &serde_json::Map<String, serde_json::Value>) -> &'static str {
+    // If the response has an explicit cursor field, match the param name
+    if obj.contains_key("next_cursor") || obj.contains_key("cursor") {
+        return "cursor";
+    }
+    if obj.contains_key("next_page_token") || obj.contains_key("pageToken") {
+        return "page_token";
+    }
+    if obj.contains_key("continuation_token") {
+        return "continuation_token";
+    }
+    // Default: Stripe convention
+    "starting_after"
 }
 
 #[cfg(test)]
