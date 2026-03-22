@@ -529,8 +529,8 @@ fn explain_source(source: &PlanSource, out: &mut String, indent: usize) {
     match source {
         PlanSource::ApiCall(call) => {
             out.push_str(&format!(
-                "{pad}ApiCall: {} {}\n",
-                call.endpoint.method, call.endpoint.path
+                "{pad}ApiCall: {} {} {}\n",
+                call.table, call.endpoint.method, call.endpoint.path
             ));
             if !call.path_params.is_empty() {
                 out.push_str(&format!("{pad}  path_params: {:?}\n", call.path_params));
@@ -687,7 +687,7 @@ mod tests {
         ).unwrap();
 
         let output = explain(&plan);
-        assert!(output.contains("ApiCall: GET /repos/{owner}/{repo}/issues"));
+        assert!(output.contains("ApiCall: issues GET /repos/{owner}/{repo}/issues"));
         assert!(output.contains("anthropics"));
         assert!(output.contains("Limit: 5"));
     }

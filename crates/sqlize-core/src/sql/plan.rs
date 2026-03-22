@@ -18,7 +18,6 @@ pub enum PlanSource {
 /// A single API call to execute.
 #[derive(Debug)]
 pub struct ApiCall {
-    #[allow(dead_code)] // used by explain output for diagnostics
     pub(crate) table: TableName,
     pub(crate) endpoint: ApiEndpoint,
     /// Column metadata from the resolved table, carried forward so the executor
