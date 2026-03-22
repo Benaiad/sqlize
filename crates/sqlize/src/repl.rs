@@ -14,7 +14,7 @@ use tabled::settings::{self, Width};
 
 use sqlize_core::catalog::Catalog;
 use sqlize_core::catalog::ddl::{catalog_ddl, single_table_ddl};
-use sqlize_core::catalog::types::{TableName, Value};
+use sqlize_core::catalog::types::{ResultSet, TableName, Value};
 use sqlize_core::exec::{AuthConfig, Client, execute};
 use sqlize_core::output::{result_set_to_json, result_set_to_toon};
 use sqlize_core::sql::planner::{explain, plan_query};
@@ -409,16 +409,21 @@ async fn handle_query(catalog: &Catalog, auth: &AuthConfig, client: &Client, sql
 
     match format {
         OutputFormat::Table => {
-            let mut builder = Builder::default();
-            let headers: Vec<&str> = result.columns.iter().map(|c| c.as_str()).collect();
-            builder.push_record(headers);
+            // Auto-switch to expanded (vertical) mode when there are many columns
+            if result.columns.len() > 6 {
+                print_expanded(&result);
+            } else {
+                let mut builder = Builder::default();
+                let headers: Vec<&str> = result.columns.iter().map(|c| c.as_str()).collect();
+                builder.push_record(headers);
 
-            for row in &result.rows {
-                let values: Vec<String> = row.0.iter().map(format_value).collect();
-                builder.push_record(values);
+                for row in &result.rows {
+                    let values: Vec<String> = row.0.iter().map(format_value).collect();
+                    builder.push_record(values);
+                }
+
+                print_table(builder);
             }
-
-            print_table(builder);
         }
         OutputFormat::Json => {
             println!("{}", result_set_to_json(&result));
@@ -435,6 +440,26 @@ async fn handle_query(catalog: &Catalog, auth: &AuthConfig, client: &Client, sql
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Expanded (vertical) display — one row per record, psql `\x` style.
+fn print_expanded(result: &ResultSet) {
+    let max_col_width = result
+        .columns
+        .iter()
+        .map(|c| c.as_str().len())
+        .max()
+        .unwrap_or(0);
+
+    for (i, row) in result.rows.iter().enumerate() {
+        let label = format!("-[ RECORD {} ]", i + 1);
+        let separator_len = term_width().saturating_sub(label.len()).saturating_sub(1);
+        println!("{}{}", label, "-".repeat(separator_len));
+
+        for (col, val) in result.columns.iter().zip(row.0.iter()) {
+            println!("{:>width$} | {}", col.as_str(), format_value(val), width = max_col_width);
+        }
+    }
+}
 
 fn print_table(builder: Builder) {
     let mut tbl = builder.build();
