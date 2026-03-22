@@ -67,7 +67,19 @@ export SQLIZE_BEARER_TOKEN=ghp_...
 export SQLIZE_BEARER_ENV_VAR=GITHUB_TOKEN
 ```
 
-Run it:
+### CLI
+
+Single-shot commands for scripts and agents:
+
+```sh
+sqlize --spec specs/github-minimal.json query "SELECT number, title FROM issues WHERE owner = 'rust-lang' AND repo = 'rust' LIMIT 5"
+sqlize --spec specs/github-minimal.json explain "SELECT ..."
+sqlize --spec specs/github-minimal.json schema issues
+```
+
+Output is JSON by default, `--format toon` for compact output.
+
+### Interactive REPL
 
 ```sh
 sqlize --spec specs/github-minimal.json
@@ -79,7 +91,7 @@ sqlize> DESCRIBE issues
 sqlize> SELECT number, title FROM issues WHERE owner = 'rust-lang' AND repo = 'rust' LIMIT 5;
 ```
 
-Output formats: `--format table` (default), `--format toon`, `--format json`.
+Tab completion, SQL syntax highlighting, multiline input, persistent history.
 
 With full OpenAPI specs, use `--tags` to filter endpoints by their OpenAPI [tag](https://swagger.io/docs/specification/v3_0/grouping-operations-with-tags/):
 
@@ -90,7 +102,7 @@ curl -L -o specs/github.json \
 sqlize --spec specs/github.json --tags repos,issues
 ```
 
-## MCP server
+### MCP server
 
 sqlize also runs as an MCP server, giving AI agents SQL access to APIs through three tools:
 
