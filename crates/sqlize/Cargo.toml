@@ -1,8 +1,15 @@
 [package]
 name = "sqlize"
+description = "SQL interface for REST APIs — query any API using SELECT, WHERE, LIMIT"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+readme = "../../README.md"
+keywords = ["sql", "rest-api", "openapi", "cli", "mcp"]
+categories = ["command-line-utilities", "database-interfaces"]
 
 [dependencies]
 sqlize-core = { workspace = true }
