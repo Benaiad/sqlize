@@ -4,6 +4,7 @@ mod response;
 pub use reqwest::Client;
 use reqwest::header::{ACCEPT, AUTHORIZATION, USER_AGENT};
 
+use crate::catalog::Catalog;
 use crate::catalog::types::{ColumnName, ResultSet, Row};
 use crate::error::{Error, Result};
 use crate::sql::plan::{ApiCall, PlanSource, QueryPlan};
@@ -29,6 +30,7 @@ pub async fn execute(
     plan: &QueryPlan,
     auth: &AuthConfig,
     client: &Client,
+    catalog: &Catalog,
 ) -> Result<ResultSet> {
     // Fetch enough rows to satisfy both OFFSET and LIMIT
     let fetch_limit = match (plan.post.limit, plan.post.offset) {
@@ -37,7 +39,7 @@ pub async fn execute(
         (None, Some(o)) => Some(o + DEFAULT_ROWS as u64),
         (None, None) => None,
     };
-    let mut result = execute_source(&plan.source, client, auth, fetch_limit).await?;
+    let mut result = execute_source(&plan.source, client, auth, catalog, fetch_limit).await?;
     postprocess::apply(&plan.post, &mut result);
     Ok(result)
 }
@@ -46,10 +48,11 @@ async fn execute_source(
     source: &PlanSource,
     client: &Client,
     auth: &AuthConfig,
+    catalog: &Catalog,
     limit: Option<u64>,
 ) -> Result<ResultSet> {
     match source {
-        PlanSource::ApiCall(call) => execute_paginated(call, client, auth, limit).await,
+        PlanSource::ApiCall(call) => execute_paginated(call, client, auth, catalog, limit).await,
         PlanSource::Join { .. } => {
             Err(Error::UnsupportedSql("JOINs not yet implemented in execution engine".to_owned()))
         }
@@ -70,6 +73,7 @@ async fn execute_paginated(
     call: &ApiCall,
     client: &Client,
     auth: &AuthConfig,
+    catalog: &Catalog,
     limit: Option<u64>,
 ) -> Result<ResultSet> {
     let string_params: std::collections::HashMap<String, String> = call
@@ -89,9 +93,10 @@ async fn execute_paginated(
         .map(|(k, v)| (k.as_str(), v.as_str()))
         .collect();
 
-    let rows_needed = limit
-        .map(|l| (l as usize).min(MAX_ROWS))
-        .unwrap_or(DEFAULT_ROWS);
+    // With explicit LIMIT: paginate up to that many rows (capped at MAX_ROWS).
+    // Without LIMIT: fetch only the first page, return all rows from it.
+    let rows_needed = limit.map(|l| (l as usize).min(MAX_ROWS));
+    let paginate = rows_needed.is_some();
 
     let mut all_columns: Vec<ColumnName> = Vec::new();
     let mut all_rows: Vec<Row> = Vec::new();
@@ -150,7 +155,25 @@ async fn execute_paginated(
             None => &body,
         };
 
-        let page = response::json_to_result_set(data, &call.table)?;
+        // Look up the table's declared columns from the catalog
+        let table = catalog.require(&call.table)?;
+
+        // Build param values map: merge path_params + query_params
+        let mut param_values: std::collections::HashMap<ColumnName, String> =
+            call.path_params.clone();
+        for col in table.pushdown_params() {
+            let api_name = match &col.origin {
+                crate::catalog::types::ColumnOrigin::QueryParam { api_name } => {
+                    api_name.as_deref().unwrap_or(col.name.as_str())
+                }
+                _ => continue,
+            };
+            if let Some(val) = call.query_params.get(api_name) {
+                param_values.insert(col.name.clone(), val.clone());
+            }
+        }
+
+        let page = response::json_to_result_set(data, &table.columns, &param_values)?;
 
         // Merge page into accumulated results
         if all_columns.is_empty() {
@@ -158,10 +181,17 @@ async fn execute_paginated(
         }
         all_rows.extend(page.rows);
 
-        // Check if we have enough rows
-        if all_rows.len() >= rows_needed {
-            all_rows.truncate(rows_needed);
+        // Without LIMIT: return first page only, no pagination
+        if !paginate {
             break;
+        }
+
+        // With LIMIT: check if we have enough rows
+        if let Some(needed) = rows_needed {
+            if all_rows.len() >= needed {
+                all_rows.truncate(needed);
+                break;
+            }
         }
 
         // Determine next page URL

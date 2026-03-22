@@ -53,8 +53,7 @@ struct GetSchemaArgs {
 struct QueryArgs {
     /// The SQL query to execute (read-only SELECT statements only).
     sql: String,
-    /// Maximum number of rows to return. Defaults to 100.
-    #[allow(dead_code)] // will be wired to LIMIT injection
+    /// Maximum number of rows to return. Defaults to 100. Applied after SQL LIMIT.
     max_rows: Option<u64>,
     /// Output format: "toon" (compact, token-efficient) or "json". Defaults to "toon".
     format: Option<String>,
@@ -125,10 +124,15 @@ impl SqlizeServer {
             Err(e) => return format!("Planning error: {e}"),
         };
 
-        let result = match execute(&plan, &self.auth, &self.client).await {
+        let mut result = match execute(&plan, &self.auth, &self.client, &self.catalog).await {
             Ok(r) => r,
             Err(e) => return format!("Execution error: {e}"),
         };
+
+        // Apply max_rows cap from the tool parameter
+        if let Some(max) = args.max_rows {
+            result.rows.truncate(max as usize);
+        }
 
         let row_count = result.rows.len();
 

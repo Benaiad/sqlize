@@ -397,7 +397,7 @@ async fn handle_query(catalog: &Catalog, auth: &AuthConfig, client: &Client, sql
         }
     };
 
-    let result = match execute(&plan, auth, client).await {
+    let result = match execute(&plan, auth, client, catalog).await {
         Ok(r) => r,
         Err(e) => {
             eprintln!("Error: {e}");

@@ -46,7 +46,7 @@ async fn main() {
 
         println!("EXPLAIN:\n{}", explain(&plan));
 
-        match execute(&plan, &auth, &client).await {
+        match execute(&plan, &auth, &client, &catalog).await {
             Ok(result) => {
                 let json = result_set_to_json(&result);
                 let toon = result_set_to_toon(&result).unwrap_or_else(|e| format!("TOON error: {e}"));

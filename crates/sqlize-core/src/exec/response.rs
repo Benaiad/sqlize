@@ -1,80 +1,52 @@
-use crate::catalog::types::{ColumnName, ResultSet, Row, TableName, Value, sanitize_name};
+use std::collections::HashMap;
+
+use crate::catalog::types::{
+    Column, ColumnName, ColumnOrigin, ResultSet, Row, Value, sanitize_name,
+};
 use crate::error::Result;
 
-/// Convert a JSON API response into a `ResultSet`.
+/// Convert a JSON API response into a `ResultSet` using the catalog schema.
 ///
-/// Expects either a JSON array (list endpoints) or a single object.
-/// Each object's keys become columns; nested objects are flattened one level
-/// with `_` separators (matching the catalog's column naming).
-///
-/// NOTE: Column names and order are derived from the JSON response at runtime,
-/// not from the catalog's declared schema. This means the ResultSet's structure
-/// depends on whatever the API returns, not on what the VirtualTable promises.
-/// The `_table` parameter is unused — it should be used to project and validate
-/// response columns against the catalog schema. This is a known architectural
-/// gap: the catalog declares a contract, but the executor doesn't enforce it.
-pub fn json_to_result_set(json: &serde_json::Value, _table: &TableName) -> Result<ResultSet> {
+/// Uses the declared columns from the `VirtualTable` to determine the result
+/// structure. Path and query parameter values are injected from the `ApiCall`
+/// so that `SELECT owner, repo, title ...` returns the param values alongside
+/// response fields.
+pub fn json_to_result_set(
+    json: &serde_json::Value,
+    columns: &[Column],
+    param_values: &HashMap<ColumnName, String>,
+) -> Result<ResultSet> {
     let items = match json {
         serde_json::Value::Array(arr) => arr.as_slice(),
         serde_json::Value::Object(_) => std::slice::from_ref(json),
         _ => return Ok(ResultSet { columns: Vec::new(), rows: Vec::new() }),
     };
 
-    if items.is_empty() {
-        return Ok(ResultSet { columns: Vec::new(), rows: Vec::new() });
-    }
-
-    // Derive column order from the first item, flattening one level of nesting
-    let columns = derive_columns(&items[0]);
+    let col_names: Vec<ColumnName> = columns.iter().map(|c| c.name.clone()).collect();
 
     let rows = items
         .iter()
-        .map(|item| extract_row(item, &columns))
+        .map(|item| extract_row(item, columns, param_values))
         .collect();
 
-    Ok(ResultSet { columns, rows })
+    Ok(ResultSet { columns: col_names, rows })
 }
 
-/// Derive column names from a JSON object, flattening one level of nesting.
-fn derive_columns(obj: &serde_json::Value) -> Vec<ColumnName> {
-    let mut columns = Vec::new();
-
-    let Some(map) = obj.as_object() else {
-        return columns;
-    };
-
-    for (key, value) in map {
-        let col_base = sanitize_name(key);
-
-        if let serde_json::Value::Object(nested) = value {
-            // Flatten one level: user.login → user_login
-            for nested_key in nested.keys() {
-                let col_name = format!("{}_{}", col_base, sanitize_name(nested_key));
-                if let Ok(cn) = ColumnName::new(&col_name) {
-                    columns.push(cn);
-                }
-            }
-        } else if let Ok(cn) = ColumnName::new(&col_base) {
-            columns.push(cn);
-        }
-    }
-
-    columns
-}
-
-/// Extract a row of values from a JSON object, matching the given column order.
-fn extract_row(obj: &serde_json::Value, columns: &[ColumnName]) -> Row {
+/// Extract a row of values from a JSON object, matching the catalog's column order.
+/// Injects path/query param values for non-response columns.
+fn extract_row(
+    obj: &serde_json::Value,
+    columns: &[Column],
+    param_values: &HashMap<ColumnName, String>,
+) -> Row {
     let Some(map) = obj.as_object() else {
         return Row(vec![Value::Null; columns.len()]);
     };
 
-    // Build a flat lookup: "column_name" → json value
-    let mut flat: std::collections::HashMap<String, &serde_json::Value> =
-        std::collections::HashMap::new();
-
+    // Build a flat lookup: "sanitized_key" → json value (one level of flattening)
+    let mut flat: HashMap<String, &serde_json::Value> = HashMap::new();
     for (key, value) in map {
         let col_base = sanitize_name(key);
-
         if let serde_json::Value::Object(nested) = value {
             for (nested_key, nested_val) in nested {
                 let col_name = format!("{}_{}", col_base, sanitize_name(nested_key));
@@ -88,9 +60,21 @@ fn extract_row(obj: &serde_json::Value, columns: &[ColumnName]) -> Row {
     let values = columns
         .iter()
         .map(|col| {
-            flat.get(col.as_str())
-                .map(|v| json_value_to_value(v))
-                .unwrap_or(Value::Null)
+            match &col.origin {
+                // Path/query params: inject from the WHERE clause values
+                ColumnOrigin::PathParam | ColumnOrigin::QueryParam { .. } => {
+                    param_values
+                        .get(&col.name)
+                        .map(|v| Value::String(v.clone()))
+                        .unwrap_or(Value::Null)
+                }
+                // Response fields: extract from JSON
+                ColumnOrigin::ResponseField => {
+                    flat.get(col.name.as_str())
+                        .map(|v| json_value_to_value(v))
+                        .unwrap_or(Value::Null)
+                }
+            }
         })
         .collect();
 
@@ -111,7 +95,6 @@ fn json_value_to_value(v: &serde_json::Value) -> Value {
             }
         }
         serde_json::Value::String(s) => Value::String(s.clone()),
-        // Arrays and nested objects beyond first level become JSON values
         other => Value::Json(other.clone()),
     }
 }
@@ -119,42 +102,78 @@ fn json_value_to_value(v: &serde_json::Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::catalog::types::ColumnType;
+
+    fn test_columns() -> Vec<Column> {
+        vec![
+            Column {
+                name: ColumnName::new("owner").unwrap(),
+                col_type: ColumnType::String,
+                nullable: false,
+                description: None,
+                origin: ColumnOrigin::PathParam,
+            },
+            Column {
+                name: ColumnName::new("id").unwrap(),
+                col_type: ColumnType::Integer,
+                nullable: false,
+                description: None,
+                origin: ColumnOrigin::ResponseField,
+            },
+            Column {
+                name: ColumnName::new("title").unwrap(),
+                col_type: ColumnType::String,
+                nullable: false,
+                description: None,
+                origin: ColumnOrigin::ResponseField,
+            },
+            Column {
+                name: ColumnName::new("user_login").unwrap(),
+                col_type: ColumnType::String,
+                nullable: true,
+                description: None,
+                origin: ColumnOrigin::ResponseField,
+            },
+        ]
+    }
 
     #[test]
-    fn flatten_nested_object() {
-        let json = serde_json::json!({
-            "id": 1,
-            "title": "test",
-            "user": {
-                "login": "alice",
-                "id": 42
-            }
-        });
+    fn schema_driven_extraction() {
+        let json = serde_json::json!([
+            {"id": 1, "title": "bug", "user": {"login": "alice"}},
+            {"id": 2, "title": "feat", "user": {"login": "bob"}}
+        ]);
+        let cols = test_columns();
+        let mut params = HashMap::new();
+        params.insert(ColumnName::new("owner").unwrap(), "rust-lang".to_owned());
 
-        let table = TableName::new("test").unwrap();
-        let result = json_to_result_set(&serde_json::json!([json]), &table).unwrap();
+        let result = json_to_result_set(&json, &cols, &params).unwrap();
 
-        let col_names: Vec<&str> = result.columns.iter().map(|c| c.as_str()).collect();
-        assert!(col_names.contains(&"id"));
-        assert!(col_names.contains(&"title"));
-        assert!(col_names.contains(&"user_login"));
-        assert!(col_names.contains(&"user_id"));
-        assert_eq!(result.rows.len(), 1);
+        assert_eq!(result.columns.len(), 4);
+        assert_eq!(result.columns[0].as_str(), "owner");
+        assert_eq!(result.rows.len(), 2);
+        // owner injected from params
+        assert_eq!(result.rows[0].0[0], Value::String("rust-lang".into()));
+        // response fields extracted
+        assert_eq!(result.rows[0].0[1], Value::Integer(1));
+        assert_eq!(result.rows[0].0[2], Value::String("bug".into()));
+        assert_eq!(result.rows[0].0[3], Value::String("alice".into()));
     }
 
     #[test]
     fn empty_array() {
-        let table = TableName::new("test").unwrap();
-        let result = json_to_result_set(&serde_json::json!([]), &table).unwrap();
+        let cols = test_columns();
+        let result = json_to_result_set(&serde_json::json!([]), &cols, &HashMap::new()).unwrap();
         assert_eq!(result.rows.len(), 0);
+        assert_eq!(result.columns.len(), 4);
     }
 
     #[test]
-    fn single_object_wraps_to_one_row() {
-        let json = serde_json::json!({"id": 1, "name": "foo"});
-        let table = TableName::new("test").unwrap();
-        let result = json_to_result_set(&json, &table).unwrap();
-        assert_eq!(result.rows.len(), 1);
+    fn missing_fields_become_null() {
+        let json = serde_json::json!([{"id": 1}]);
+        let cols = test_columns();
+        let result = json_to_result_set(&json, &cols, &HashMap::new()).unwrap();
+        assert_eq!(result.rows[0].0[2], Value::Null); // title missing
+        assert_eq!(result.rows[0].0[3], Value::Null); // user_login missing
     }
-
 }

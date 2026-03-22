@@ -73,7 +73,7 @@ fn plan_select(query: &Query, catalog: &Catalog) -> Result<QueryPlan> {
     let projections = plan_projections(&select.projection, table)?;
 
     // Build ORDER BY
-    let order_by = plan_order_by(&query.order_by)?;
+    let order_by = plan_order_by(&query.order_by, table)?;
 
     // Extract LIMIT / OFFSET
     let (limit, offset) = extract_limit_offset(&query.limit_clause);
@@ -271,13 +271,10 @@ fn classify_single_condition(
                 value: filter_value,
             })),
         },
-        // Unknown columns become local filters — the execution engine
-        // will skip them if the column doesn't exist in the response.
-        None => Ok(ConditionClass::LocalFilter(LocalFilter {
+        None => Err(Error::ColumnNotFound {
+            table: table.name.clone(),
             column: col_name,
-            op: filter_op,
-            value: filter_value,
-        })),
+        }),
     }
 }
 
@@ -388,7 +385,7 @@ fn build_api_call(table: &VirtualTable, classified: &ClassifiedConditions) -> Ap
 
 fn plan_projections(
     items: &[SelectItem],
-    _table: &VirtualTable,
+    table: &VirtualTable,
 ) -> Result<Vec<Projection>> {
     let mut projections = Vec::new();
 
@@ -399,6 +396,7 @@ fn plan_projections(
             }
             SelectItem::UnnamedExpr(expr) => {
                 let col_name = extract_column_name(expr)?;
+                validate_column(table, &col_name)?;
                 projections.push(Projection::Column {
                     table: None,
                     name: col_name,
@@ -407,6 +405,7 @@ fn plan_projections(
             }
             SelectItem::ExprWithAlias { expr, alias } => {
                 let col_name = extract_column_name(expr)?;
+                validate_column(table, &col_name)?;
                 projections.push(Projection::Column {
                     table: None,
                     name: col_name,
@@ -422,11 +421,22 @@ fn plan_projections(
     Ok(projections)
 }
 
+fn validate_column(table: &VirtualTable, col: &ColumnName) -> Result<()> {
+    if table.columns.iter().any(|c| c.name == *col) {
+        Ok(())
+    } else {
+        Err(Error::ColumnNotFound {
+            table: table.name.clone(),
+            column: col.clone(),
+        })
+    }
+}
+
 // ---------------------------------------------------------------------------
 // ORDER BY
 // ---------------------------------------------------------------------------
 
-fn plan_order_by(order_by: &Option<ast::OrderBy>) -> Result<Vec<OrderByItem>> {
+fn plan_order_by(order_by: &Option<ast::OrderBy>, table: &VirtualTable) -> Result<Vec<OrderByItem>> {
     let Some(ob) = order_by else {
         return Ok(Vec::new());
     };
@@ -434,13 +444,14 @@ fn plan_order_by(order_by: &Option<ast::OrderBy>) -> Result<Vec<OrderByItem>> {
     let exprs = match &ob.kind {
         OrderByKind::Expressions(exprs) => exprs,
         OrderByKind::All(_) => {
-            return Err(Error::UnsupportedSql("ORDER BY ALL not supported".to_owned().to_owned()))
+            return Err(Error::UnsupportedSql("ORDER BY ALL not supported".to_owned()))
         }
     };
 
     let mut items = Vec::new();
     for expr in exprs {
         let col_name = extract_column_name(&expr.expr)?;
+        validate_column(table, &col_name)?;
         let descending = expr.options.asc.map_or(false, |asc| !asc);
         items.push(OrderByItem {
             column: col_name,
