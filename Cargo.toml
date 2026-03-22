@@ -31,7 +31,7 @@ targets = [
     "aarch64-apple-darwin",
     "x86_64-pc-windows-msvc",
 ]
-install-path = "CARGO_HOME"
+install-path = ["$XDG_BIN_HOME/", "$XDG_DATA_HOME/../bin", "~/.local/bin"]
 
 # The profile that 'dist' will build with
 [profile.dist]
