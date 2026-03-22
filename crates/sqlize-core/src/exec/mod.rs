@@ -6,8 +6,7 @@ use std::collections::HashMap;
 pub use reqwest::Client;
 use reqwest::header::{ACCEPT, AUTHORIZATION, USER_AGENT};
 
-use crate::catalog::Catalog;
-use crate::catalog::types::{ColumnName, ResultSet, Row};
+use crate::catalog::types::{Column, ColumnName, ResultSet, Row};
 use crate::error::{Error, Result};
 use crate::sql::plan::{ApiCall, PlanSource, QueryPlan};
 
@@ -25,7 +24,6 @@ pub async fn execute(
     plan: &QueryPlan,
     auth: &AuthConfig,
     client: &Client,
-    catalog: &Catalog,
 ) -> Result<ResultSet> {
     let fetch_limit = plan.post.limit.map(|l| {
         let offset = plan.post.offset.unwrap_or(0);
@@ -34,7 +32,7 @@ pub async fn execute(
 
     let mut result = match &plan.source {
         PlanSource::ApiCall(call) => {
-            execute_api_call(call, client, auth, catalog, fetch_limit).await?
+            execute_api_call(call, client, auth, fetch_limit).await?
         }
     };
 
@@ -50,12 +48,10 @@ async fn execute_api_call(
     call: &ApiCall,
     client: &Client,
     auth: &AuthConfig,
-    catalog: &Catalog,
     limit: Option<u64>,
 ) -> Result<ResultSet> {
     let first_url = resolve_url(call)?;
-    let table = catalog.require(&call.table)?;
-    let param_values = build_param_values(call, table);
+    let param_values = build_param_values(call, &call.columns);
 
     // Only paginate when the user explicitly asks for rows via LIMIT.
     // Without LIMIT, return only the first page to avoid hammering APIs.
@@ -73,7 +69,7 @@ async fn execute_api_call(
         let (body, link_next) = fetch_page(client, auth, call, &url, is_first_page).await?;
 
         let data = unwrap_response(&body, &call.endpoint.data_path);
-        let page = response::json_to_result_set(data, &table.columns, &param_values)?;
+        let page = response::json_to_result_set(data, &call.columns, &param_values)?;
 
         if all_columns.is_empty() {
             all_columns = page.columns;
@@ -108,10 +104,10 @@ fn resolve_url(call: &ApiCall) -> Result<String> {
 
 fn build_param_values(
     call: &ApiCall,
-    table: &crate::catalog::types::VirtualTable,
+    columns: &[Column],
 ) -> HashMap<ColumnName, String> {
     let mut values: HashMap<ColumnName, String> = call.path_params.clone();
-    for col in table.pushdown_params() {
+    for col in columns.iter().filter(|c| c.role.is_pushable() && !c.role.is_required()) {
         let param_key = col.api_param_key();
         if let Some(val) = call.query_params.get(param_key) {
             values.insert(col.name.clone(), val.clone());

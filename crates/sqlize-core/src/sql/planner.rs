@@ -373,6 +373,7 @@ fn build_api_call(table: &VirtualTable, classified: &ClassifiedConditions) -> Ap
     ApiCall {
         table: table.name.clone(),
         endpoint: table.endpoint.clone(),
+        columns: table.columns.clone(),
         path_params: classified.path_params.clone(),
         query_params: classified.query_params.clone(),
     }

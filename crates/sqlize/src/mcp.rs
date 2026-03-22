@@ -124,7 +124,7 @@ impl SqlizeServer {
             Err(e) => return format!("Planning error: {e}"),
         };
 
-        let mut result = match execute(&plan, &self.auth, &self.client, &self.catalog).await {
+        let mut result = match execute(&plan, &self.auth, &self.client).await {
             Ok(r) => r,
             Err(e) => return format!("Execution error: {e}"),
         };

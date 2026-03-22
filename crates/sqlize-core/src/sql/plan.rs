@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::catalog::types::{ApiEndpoint, ColumnName, Scalar, TableName};
+use crate::catalog::types::{ApiEndpoint, Column, ColumnName, Scalar, TableName};
 
 /// The output of the query planner: a recipe for executing a SQL query.
 #[derive(Debug)]
@@ -18,8 +18,12 @@ pub enum PlanSource {
 /// A single API call to execute.
 #[derive(Debug)]
 pub struct ApiCall {
+    #[allow(dead_code)] // used by explain output for diagnostics
     pub(crate) table: TableName,
     pub(crate) endpoint: ApiEndpoint,
+    /// Column metadata from the resolved table, carried forward so the executor
+    /// doesn't need to re-look-up the table in the catalog.
+    pub(crate) columns: Vec<Column>,
     /// Path parameter values extracted from WHERE (e.g., owner = 'anthropics').
     pub(crate) path_params: HashMap<ColumnName, String>,
     /// Query parameter values to push down to the API (e.g., state = 'open').
