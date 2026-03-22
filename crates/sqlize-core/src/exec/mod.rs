@@ -30,7 +30,14 @@ pub async fn execute(
     auth: &AuthConfig,
     client: &Client,
 ) -> Result<ResultSet> {
-    let mut result = execute_source(&plan.source, client, auth, plan.post.limit).await?;
+    // Fetch enough rows to satisfy both OFFSET and LIMIT
+    let fetch_limit = match (plan.post.limit, plan.post.offset) {
+        (Some(l), Some(o)) => Some(l + o),
+        (Some(l), None) => Some(l),
+        (None, Some(o)) => Some(o + DEFAULT_ROWS as u64),
+        (None, None) => None,
+    };
+    let mut result = execute_source(&plan.source, client, auth, fetch_limit).await?;
     postprocess::apply(&plan.post, &mut result);
     Ok(result)
 }
