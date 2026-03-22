@@ -57,9 +57,11 @@ async fn execute_api_call(
     let table = catalog.require(&call.table)?;
     let param_values = build_param_values(call, table);
 
-    let rows_needed = match limit {
-        Some(l) => (l as usize).min(MAX_ROWS),
-        None => MAX_ROWS,
+    // Only paginate when the user explicitly asks for rows via LIMIT.
+    // Without LIMIT, return only the first page to avoid hammering APIs.
+    let (rows_needed, paginate) = match limit {
+        Some(l) => ((l as usize).min(MAX_ROWS), true),
+        None => (usize::MAX, false),
     };
 
     let mut all_columns: Vec<ColumnName> = Vec::new();
@@ -77,6 +79,10 @@ async fn execute_api_call(
             all_columns = page.columns;
         }
         all_rows.extend(page.rows);
+
+        if !paginate {
+            break;
+        }
 
         if all_rows.len() >= rows_needed {
             all_rows.truncate(rows_needed);
