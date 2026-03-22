@@ -93,13 +93,14 @@ async fn execute_api_call(
 }
 
 fn resolve_url(call: &ApiCall) -> Result<String> {
-    let string_params: HashMap<String, String> = call
-        .path_params
-        .iter()
-        .map(|(k, v)| (k.as_str().to_owned(), v.clone()))
-        .collect();
-
-    call.endpoint.url(&string_params).ok_or(Error::UnresolvedUrl)
+    call.endpoint
+        .url(|name| {
+            call.path_params
+                .iter()
+                .find(|(k, _)| k.as_str() == name)
+                .map(|(_, v)| v.as_str())
+        })
+        .ok_or(Error::UnresolvedUrl)
 }
 
 fn build_param_values(

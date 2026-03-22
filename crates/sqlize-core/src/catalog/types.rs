@@ -129,12 +129,12 @@ impl PathTemplate {
             .collect()
     }
 
-    /// Substitute placeholders with concrete values.
-    /// Returns `None` if any placeholder is missing from the map.
-    pub fn resolve(&self, params: &std::collections::HashMap<String, String>) -> Option<String> {
+    /// Substitute placeholders with concrete values via a lookup closure.
+    /// Returns `None` if any placeholder is missing (closure returns `None`).
+    pub fn resolve<'a>(&self, lookup: impl Fn(&str) -> Option<&'a str>) -> Option<String> {
         let mut result = self.0.clone();
         for name in self.placeholders() {
-            let value = params.get(name)?;
+            let value = lookup(name)?;
             result = result.replace(&format!("{{{name}}}"), value);
         }
         Some(result)
@@ -282,8 +282,8 @@ pub struct ApiEndpoint {
 }
 
 impl ApiEndpoint {
-    pub fn url(&self, params: &std::collections::HashMap<String, String>) -> Option<String> {
-        let path = self.path.resolve(params)?;
+    pub fn url<'a>(&self, lookup: impl Fn(&str) -> Option<&'a str>) -> Option<String> {
+        let path = self.path.resolve(&lookup)?;
         Some(format!("{}{}", self.base_url, path))
     }
 }
