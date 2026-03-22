@@ -173,4 +173,62 @@ mod tests {
         assert_eq!(result.rows[0].0[2], Value::Null); // title missing
         assert_eq!(result.rows[0].0[3], Value::Null); // user_login missing
     }
+
+    #[test]
+    fn shared_param_response_column_prefers_response_value() {
+        // `state` is both a query param (for filtering) and a response field.
+        // The response value should win over the param value.
+        let cols = vec![
+            Column {
+                name: ColumnName::new("state").unwrap(),
+                col_type: ColumnType::String,
+                nullable: false,
+                description: None,
+                origin: ColumnOrigin::QueryParam { api_name: None },
+            },
+            Column {
+                name: ColumnName::new("title").unwrap(),
+                col_type: ColumnType::String,
+                nullable: false,
+                description: None,
+                origin: ColumnOrigin::ResponseField,
+            },
+        ];
+
+        let json = serde_json::json!([
+            {"state": "open", "title": "bug"},
+            {"state": "closed", "title": "done"}
+        ]);
+
+        let mut params = HashMap::new();
+        params.insert(ColumnName::new("state").unwrap(), "open".to_owned());
+
+        let result = json_to_result_set(&json, &cols, &params).unwrap();
+
+        // First row: state from JSON is "open" (matches filter)
+        assert_eq!(result.rows[0].0[0], Value::String("open".into()));
+        // Second row: state from JSON is "closed" (differs from filter — response wins)
+        assert_eq!(result.rows[1].0[0], Value::String("closed".into()));
+    }
+
+    #[test]
+    fn param_only_column_uses_param_value() {
+        // `owner` is a path param not present in the response — should use param value.
+        let cols = vec![
+            Column {
+                name: ColumnName::new("owner").unwrap(),
+                col_type: ColumnType::String,
+                nullable: false,
+                description: None,
+                origin: ColumnOrigin::PathParam,
+            },
+        ];
+
+        let json = serde_json::json!([{"id": 1}]);
+        let mut params = HashMap::new();
+        params.insert(ColumnName::new("owner").unwrap(), "rust-lang".to_owned());
+
+        let result = json_to_result_set(&json, &cols, &params).unwrap();
+        assert_eq!(result.rows[0].0[0], Value::String("rust-lang".into()));
+    }
 }
