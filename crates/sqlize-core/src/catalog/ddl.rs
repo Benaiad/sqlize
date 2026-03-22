@@ -37,8 +37,8 @@ pub fn table_ddl(table: &VirtualTable) -> String {
 
         let origin_tag = match &col.origin {
             ColumnOrigin::PathParam => " [required param]",
-            ColumnOrigin::QueryParam { .. } => " [filterable]",
-            ColumnOrigin::QueryParamAndResponseField { .. } => " [filterable]",
+            ColumnOrigin::QueryParam => " [filterable]",
+            ColumnOrigin::QueryParamAndResponseField => " [filterable]",
             ColumnOrigin::ResponseField => "",
         };
 
@@ -86,6 +86,7 @@ mod tests {
                     nullable: false,
                     description: Some("Repository owner".to_owned()),
                     origin: ColumnOrigin::PathParam,
+                    api_name: None,
                 },
                 Column {
                     name: ColumnName::new("repo").unwrap(),
@@ -93,6 +94,7 @@ mod tests {
                     nullable: false,
                     description: Some("Repository name".to_owned()),
                     origin: ColumnOrigin::PathParam,
+                    api_name: None,
                 },
                 Column {
                     name: ColumnName::new("id").unwrap(),
@@ -100,6 +102,7 @@ mod tests {
                     nullable: false,
                     description: Some("Issue ID".to_owned()),
                     origin: ColumnOrigin::ResponseField,
+                    api_name: None,
                 },
                 Column {
                     name: ColumnName::new("title").unwrap(),
@@ -107,13 +110,14 @@ mod tests {
                     nullable: false,
                     description: Some("Issue title".to_owned()),
                     origin: ColumnOrigin::ResponseField,
+                    api_name: None,
                 },
                 Column {
                     name: ColumnName::new("state").unwrap(),
                     col_type: ColumnType::String,
                     nullable: false,
                     description: Some("open or closed".to_owned()),
-                    origin: ColumnOrigin::QueryParam { api_name: None },
+                    origin: ColumnOrigin::QueryParam, api_name: None,
                 },
             ],
             endpoint: ApiEndpoint {

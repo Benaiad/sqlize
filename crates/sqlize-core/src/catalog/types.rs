@@ -170,18 +170,11 @@ pub enum ColumnOrigin {
     /// From a URL path placeholder (e.g., `{owner}`). Always required in WHERE.
     PathParam,
     /// From an API query parameter (e.g., `?state=open`). Pushed down when filtered.
-    QueryParam {
-        /// The API parameter name, if different from the column name.
-        api_name: Option<String>,
-    },
+    QueryParam,
     /// From the response body. Cannot influence the API call.
     ResponseField,
-    /// Both a query parameter (for filtering) and a response field (for the value).
-    /// Example: `state` can be filtered via `?state=open` and also appears in the response.
-    QueryParamAndResponseField {
-        /// The API parameter name, if different from the column name.
-        api_name: Option<String>,
-    },
+    /// Both a query parameter and a response field (e.g., `state`).
+    QueryParamAndResponseField,
 }
 
 // ---------------------------------------------------------------------------
@@ -195,6 +188,9 @@ pub struct Column {
     pub nullable: bool,
     pub description: Option<String>,
     pub origin: ColumnOrigin,
+    /// The API parameter name, when different from the column name.
+    /// Only meaningful for QueryParam and QueryParamAndResponseField origins.
+    pub api_name: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -271,7 +267,7 @@ impl VirtualTable {
     pub fn pushdown_params(&self) -> impl Iterator<Item = &Column> {
         self.columns
             .iter()
-            .filter(|c| matches!(c.origin, ColumnOrigin::QueryParam { .. } | ColumnOrigin::QueryParamAndResponseField { .. }))
+            .filter(|c| matches!(c.origin, ColumnOrigin::QueryParam | ColumnOrigin::QueryParamAndResponseField))
     }
 
     /// Columns that come from the response body.

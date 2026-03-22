@@ -9,8 +9,9 @@ use crate::catalog::Catalog;
 use crate::catalog::types::{ColumnName, ColumnOrigin, TableName, VirtualTable};
 use crate::error::{Error, Result};
 
+use crate::catalog::types::Value;
 use super::plan::{
-    ApiCall, FilterOp, FilterValue, LocalFilter, OrderByItem, PostProcessing, Projection,
+    ApiCall, FilterOp, LocalFilter, OrderByItem, PostProcessing, Projection,
     QueryPlan, PlanSource,
 };
 
@@ -214,7 +215,7 @@ fn classify_single_condition(
         return Ok(ConditionClass::LocalFilter(LocalFilter {
             column: col_name,
             op: FilterOp::IsNull,
-            value: FilterValue::Null,
+            value: Value::Null,
         }));
     }
     if let Expr::IsNotNull(inner) = expr {
@@ -222,7 +223,7 @@ fn classify_single_condition(
         return Ok(ConditionClass::LocalFilter(LocalFilter {
             column: col_name,
             op: FilterOp::IsNotNull,
-            value: FilterValue::Null,
+            value: Value::Null,
         }));
     }
 
@@ -250,11 +251,11 @@ fn classify_single_condition(
                     value: value_str,
                 })
             }
-            ColumnOrigin::QueryParam { api_name }
-            | ColumnOrigin::QueryParamAndResponseField { api_name }
+            ColumnOrigin::QueryParam
+            | ColumnOrigin::QueryParamAndResponseField
                 if filter_op == FilterOp::Eq =>
             {
-                let param_name = api_name
+                let param_name = col.api_name
                     .as_deref()
                     .unwrap_or(col.name.as_str())
                     .to_owned();
@@ -312,23 +313,23 @@ fn convert_op(op: &ast::BinaryOperator) -> Result<FilterOp> {
     }
 }
 
-fn extract_value(expr: &Expr) -> Result<FilterValue> {
+fn extract_value(expr: &Expr) -> Result<Value> {
     match expr {
         Expr::Value(v) => match &v.value {
             SqlValue::SingleQuotedString(s) | SqlValue::DoubleQuotedString(s) => {
-                Ok(FilterValue::String(s.clone()))
+                Ok(Value::String(s.clone()))
             }
             SqlValue::Number(n, _) => {
                 if let Ok(i) = n.parse::<i64>() {
-                    Ok(FilterValue::Integer(i))
+                    Ok(Value::Integer(i))
                 } else if let Ok(f) = n.parse::<f64>() {
-                    Ok(FilterValue::Float(f))
+                    Ok(Value::Float(f))
                 } else {
                     Err(Error::UnsupportedSql("unparseable number".to_owned()))
                 }
             }
-            SqlValue::Boolean(b) => Ok(FilterValue::Boolean(*b)),
-            SqlValue::Null => Ok(FilterValue::Null),
+            SqlValue::Boolean(b) => Ok(Value::Boolean(*b)),
+            SqlValue::Null => Ok(Value::Null),
             _ => Err(Error::UnsupportedSql("unsupported value type in WHERE".to_owned())),
         },
         Expr::Identifier(ident) => Err(Error::UnsupportedSql(
@@ -344,13 +345,14 @@ fn extract_value(expr: &Expr) -> Result<FilterValue> {
     }
 }
 
-fn filter_value_to_string(v: &FilterValue) -> String {
+fn filter_value_to_string(v: &Value) -> String {
     match v {
-        FilterValue::String(s) => s.clone(),
-        FilterValue::Integer(i) => i.to_string(),
-        FilterValue::Float(f) => f.to_string(),
-        FilterValue::Boolean(b) => b.to_string(),
-        FilterValue::Null => String::new(),
+        Value::String(s) => s.clone(),
+        Value::Integer(i) => i.to_string(),
+        Value::Float(f) => f.to_string(),
+        Value::Boolean(b) => b.to_string(),
+        Value::Null => String::new(),
+        Value::Json(j) => j.to_string(),
     }
 }
 
@@ -569,6 +571,7 @@ mod tests {
                     nullable: false,
                     description: None,
                     origin: ColumnOrigin::PathParam,
+                    api_name: None,
                 },
                 Column {
                     name: ColumnName::new("repo").unwrap(),
@@ -576,13 +579,15 @@ mod tests {
                     nullable: false,
                     description: None,
                     origin: ColumnOrigin::PathParam,
+                    api_name: None,
                 },
                 Column {
                     name: ColumnName::new("state").unwrap(),
                     col_type: ColumnType::String,
                     nullable: false,
                     description: None,
-                    origin: ColumnOrigin::QueryParam { api_name: None },
+                    origin: ColumnOrigin::QueryParam,
+                    api_name: None,
                 },
                 Column {
                     name: ColumnName::new("id").unwrap(),
@@ -590,6 +595,7 @@ mod tests {
                     nullable: false,
                     description: None,
                     origin: ColumnOrigin::ResponseField,
+                    api_name: None,
                 },
                 Column {
                     name: ColumnName::new("number").unwrap(),
@@ -597,6 +603,7 @@ mod tests {
                     nullable: false,
                     description: None,
                     origin: ColumnOrigin::ResponseField,
+                    api_name: None,
                 },
                 Column {
                     name: ColumnName::new("title").unwrap(),
@@ -604,6 +611,7 @@ mod tests {
                     nullable: false,
                     description: None,
                     origin: ColumnOrigin::ResponseField,
+                    api_name: None,
                 },
                 Column {
                     name: ColumnName::new("created_at").unwrap(),
@@ -611,6 +619,7 @@ mod tests {
                     nullable: false,
                     description: None,
                     origin: ColumnOrigin::ResponseField,
+                    api_name: None,
                 },
             ],
             endpoint: ApiEndpoint {

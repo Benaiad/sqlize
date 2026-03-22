@@ -58,6 +58,7 @@ fn collect_columns(
                             nullable: !is_required,
                             description,
                             origin: ColumnOrigin::ResponseField,
+                            api_name: None,
                         });
                     }
                     // Skip columns with names that don't validate (rare edge cases)

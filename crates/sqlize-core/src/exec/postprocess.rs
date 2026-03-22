@@ -1,5 +1,5 @@
 use crate::catalog::types::{ColumnName, ResultSet, Row, Value};
-use crate::sql::plan::{FilterOp, FilterValue, LocalFilter, OrderByItem, PostProcessing, Projection};
+use crate::sql::plan::{FilterOp, LocalFilter, OrderByItem, PostProcessing, Projection};
 
 /// Apply post-processing steps to a result set in place.
 pub fn apply(post: &PostProcessing, result: &mut ResultSet) {
@@ -44,27 +44,27 @@ fn row_matches_filter(row: &Row, columns: &[ColumnName], filter: &LocalFilter) -
     }
 }
 
-fn value_eq(row_val: &Value, filter_val: &FilterValue) -> bool {
+fn value_eq(row_val: &Value, filter_val: &Value) -> bool {
     match (row_val, filter_val) {
-        (Value::String(a), FilterValue::String(b)) => a == b,
-        (Value::Integer(a), FilterValue::Integer(b)) => a == b,
-        (Value::Float(a), FilterValue::Float(b)) => (*a - *b).abs() < f64::EPSILON,
-        (Value::Boolean(a), FilterValue::Boolean(b)) => a == b,
-        (Value::Null, FilterValue::Null) => true,
+        (Value::String(a), Value::String(b)) => a == b,
+        (Value::Integer(a), Value::Integer(b)) => a == b,
+        (Value::Float(a), Value::Float(b)) => (*a - *b).abs() < f64::EPSILON,
+        (Value::Boolean(a), Value::Boolean(b)) => a == b,
+        (Value::Null, Value::Null) => true,
         // Cross-type comparisons: integer as string
-        (Value::Integer(a), FilterValue::String(b)) => a.to_string() == *b,
-        (Value::String(a), FilterValue::Integer(b)) => a.parse::<i64>().ok() == Some(*b),
+        (Value::Integer(a), Value::String(b)) => a.to_string() == *b,
+        (Value::String(a), Value::Integer(b)) => a.parse::<i64>().ok() == Some(*b),
         _ => false,
     }
 }
 
-fn value_cmp(row_val: &Value, filter_val: &FilterValue) -> Option<std::cmp::Ordering> {
+fn value_cmp(row_val: &Value, filter_val: &Value) -> Option<std::cmp::Ordering> {
     match (row_val, filter_val) {
-        (Value::Integer(a), FilterValue::Integer(b)) => Some(a.cmp(b)),
-        (Value::Float(a), FilterValue::Float(b)) => a.partial_cmp(b),
-        (Value::String(a), FilterValue::String(b)) => Some(a.cmp(b)),
-        (Value::Integer(a), FilterValue::Float(b)) => (*a as f64).partial_cmp(b),
-        (Value::Float(a), FilterValue::Integer(b)) => a.partial_cmp(&(*b as f64)),
+        (Value::Integer(a), Value::Integer(b)) => Some(a.cmp(b)),
+        (Value::Float(a), Value::Float(b)) => a.partial_cmp(b),
+        (Value::String(a), Value::String(b)) => Some(a.cmp(b)),
+        (Value::Integer(a), Value::Float(b)) => (*a as f64).partial_cmp(b),
+        (Value::Float(a), Value::Integer(b)) => a.partial_cmp(&(*b as f64)),
         _ => None,
     }
 }
@@ -206,7 +206,7 @@ mod tests {
         let filters = vec![LocalFilter {
             column: ColumnName::new("name").unwrap(),
             op: FilterOp::Eq,
-            value: FilterValue::String("bob".into()),
+            value: Value::String("bob".into()),
         }];
         apply_local_filters(&filters, &mut result);
         assert_eq!(result.rows.len(), 1);
@@ -219,7 +219,7 @@ mod tests {
         let filters = vec![LocalFilter {
             column: ColumnName::new("age").unwrap(),
             op: FilterOp::Gt,
-            value: FilterValue::Integer(28),
+            value: Value::Integer(28),
         }];
         apply_local_filters(&filters, &mut result);
         assert_eq!(result.rows.len(), 2); // alice (30) and charlie (35)

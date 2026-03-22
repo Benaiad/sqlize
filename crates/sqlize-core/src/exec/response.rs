@@ -26,7 +26,7 @@ pub fn json_to_result_set(
     // controls, not data columns. Keep path params, response fields, and dual-origin.
     let data_columns: Vec<&Column> = columns
         .iter()
-        .filter(|c| !matches!(c.origin, ColumnOrigin::QueryParam { .. }))
+        .filter(|c| !matches!(c.origin, ColumnOrigin::QueryParam))
         .collect();
 
     let col_names: Vec<ColumnName> = data_columns.iter().map(|c| c.name.clone()).collect();
@@ -116,6 +116,7 @@ mod tests {
                 nullable: false,
                 description: None,
                 origin: ColumnOrigin::PathParam,
+                api_name: None,
             },
             Column {
                 name: ColumnName::new("id").unwrap(),
@@ -123,6 +124,7 @@ mod tests {
                 nullable: false,
                 description: None,
                 origin: ColumnOrigin::ResponseField,
+                api_name: None,
             },
             Column {
                 name: ColumnName::new("title").unwrap(),
@@ -130,6 +132,7 @@ mod tests {
                 nullable: false,
                 description: None,
                 origin: ColumnOrigin::ResponseField,
+                api_name: None,
             },
             Column {
                 name: ColumnName::new("user_login").unwrap(),
@@ -137,6 +140,7 @@ mod tests {
                 nullable: true,
                 description: None,
                 origin: ColumnOrigin::ResponseField,
+                api_name: None,
             },
         ]
     }
@@ -220,7 +224,8 @@ mod tests {
                 col_type: ColumnType::String,
                 nullable: false,
                 description: None,
-                origin: ColumnOrigin::QueryParamAndResponseField { api_name: None },
+                origin: ColumnOrigin::QueryParamAndResponseField,
+                api_name: None,
             },
             Column {
                 name: ColumnName::new("title").unwrap(),
@@ -228,6 +233,7 @@ mod tests {
                 nullable: false,
                 description: None,
                 origin: ColumnOrigin::ResponseField,
+                api_name: None,
             },
         ];
 
@@ -257,6 +263,7 @@ mod tests {
                 nullable: false,
                 description: None,
                 origin: ColumnOrigin::PathParam,
+                api_name: None,
             },
         ];
 

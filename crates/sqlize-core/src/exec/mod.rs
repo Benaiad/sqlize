@@ -1,6 +1,8 @@
 mod postprocess;
 mod response;
 
+use std::collections::HashMap;
+
 pub use reqwest::Client;
 use reqwest::header::{ACCEPT, AUTHORIZATION, USER_AGENT};
 
@@ -9,176 +11,75 @@ use crate::catalog::types::{ColumnName, ResultSet, Row};
 use crate::error::{Error, Result};
 use crate::sql::plan::{ApiCall, PlanSource, QueryPlan};
 
-/// Max rows when LIMIT is specified — prevents runaway pagination.
+/// Hard cap on total rows fetched across all pages.
 const MAX_ROWS: usize = 10_000;
 
 /// Configuration for API authentication.
 #[derive(Debug, Clone)]
 pub struct AuthConfig {
-    /// Bearer token for API authentication.
     pub bearer_token: Option<String>,
 }
 
 /// Execute a query plan against live APIs.
-///
-/// Accepts a shared `reqwest::Client` for connection reuse across queries.
 pub async fn execute(
     plan: &QueryPlan,
     auth: &AuthConfig,
     client: &Client,
     catalog: &Catalog,
 ) -> Result<ResultSet> {
-    // Only paginate when LIMIT is explicit. OFFSET alone uses the first page.
     let fetch_limit = plan.post.limit.map(|l| {
         let offset = plan.post.offset.unwrap_or(0);
         l + offset
     });
-    let mut result = execute_source(&plan.source, client, auth, catalog, fetch_limit).await?;
+
+    let mut result = match &plan.source {
+        PlanSource::ApiCall(call) => {
+            execute_api_call(call, client, auth, catalog, fetch_limit).await?
+        }
+    };
+
     postprocess::apply(&plan.post, &mut result);
     Ok(result)
 }
 
-async fn execute_source(
-    source: &PlanSource,
-    client: &Client,
-    auth: &AuthConfig,
-    catalog: &Catalog,
-    limit: Option<u64>,
-) -> Result<ResultSet> {
-    match source {
-        PlanSource::ApiCall(call) => execute_paginated(call, client, auth, catalog, limit).await,
-    }
-}
+// ---------------------------------------------------------------------------
+// API execution with pagination
+// ---------------------------------------------------------------------------
 
-/// Execute an API call with automatic pagination.
-///
-/// Follows pages until one of:
-/// - We have enough rows to satisfy LIMIT
-/// - The API signals no more pages
-/// - We hit the hard cap (MAX_ROWS)
-///
-/// Pagination is detected from:
-/// 1. `Link` header with `rel="next"` (RFC 8288 — GitHub, GitLab, most REST APIs)
-/// 2. Response body URL fields: `next`, `next_url`, `next_page` (Django, others)
-async fn execute_paginated(
+async fn execute_api_call(
     call: &ApiCall,
     client: &Client,
     auth: &AuthConfig,
     catalog: &Catalog,
     limit: Option<u64>,
 ) -> Result<ResultSet> {
-    let string_params: std::collections::HashMap<String, String> = call
-        .path_params
-        .iter()
-        .map(|(k, v)| (k.as_str().to_owned(), v.clone()))
-        .collect();
+    let first_url = resolve_url(call)?;
+    let table = catalog.require(&call.table)?;
+    let param_values = build_param_values(call, table);
 
-    let first_url = call
-        .endpoint
-        .url(&string_params)
-        .ok_or(Error::UnresolvedUrl)?;
-
-    let query_params: Vec<(&str, &str)> = call
-        .query_params
-        .iter()
-        .map(|(k, v)| (k.as_str(), v.as_str()))
-        .collect();
-
-    // With explicit LIMIT: paginate up to that many rows (capped at MAX_ROWS).
-    // Without LIMIT: fetch only the first page, return all rows from it.
     let rows_needed = limit.map(|l| (l as usize).min(MAX_ROWS));
     let paginate = rows_needed.is_some();
 
     let mut all_columns: Vec<ColumnName> = Vec::new();
     let mut all_rows: Vec<Row> = Vec::new();
-    let mut next_url: Option<String> = Some(first_url.clone());
+    let mut next_url: Option<String> = Some(first_url);
     let mut is_first_page = true;
 
     while let Some(url) = next_url.take() {
-        let mut request = client
-            .get(&url)
-            .header(ACCEPT, &call.endpoint.accept)
-            .header(USER_AGENT, "sqlize/0.1.0");
+        let (body, link_next) = fetch_page(client, auth, call, &url, is_first_page).await?;
 
-        if let Some(token) = &auth.bearer_token {
-            request = request.header(AUTHORIZATION, format!("Bearer {token}"));
-        }
-
-        // Only add query params on the first request — subsequent pages
-        // use the full URL from the Link header or next field.
-        if is_first_page {
-            request = request.query(&query_params);
-        }
-
-        tracing::debug!(%url, page = !is_first_page, "executing API call");
-
-        let resp = request.send().await?;
-
-        // Check rate limiting
-        if let Some(remaining) = resp.headers().get("x-ratelimit-remaining") {
-            if let Ok(s) = remaining.to_str() {
-                if let Ok(n) = s.parse::<u32>() {
-                    if n < 100 {
-                        tracing::warn!(remaining = n, "API rate limit running low");
-                    }
-                }
-            }
-        }
-
-        // Extract next page URL from Link header before consuming the response
-        let link_next = parse_link_next(resp.headers());
-
-        let status = resp.status();
-        if !status.is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            return Err(Error::ApiError {
-                status: status.as_u16(),
-                url,
-                body,
-            });
-        }
-
-        let body: serde_json::Value = resp.json().await?;
-
-        // Extract the data array (handles wrapped responses like Stripe's {"data": [...]})
-        let data = match &call.endpoint.data_path {
-            Some(field) => body.get(field).unwrap_or(&body),
-            None => &body,
-        };
-
-        // Look up the table's declared columns from the catalog
-        let table = catalog.require(&call.table)?;
-
-        // Build param values map: merge path_params + query_params
-        let mut param_values: std::collections::HashMap<ColumnName, String> =
-            call.path_params.clone();
-        for col in table.pushdown_params() {
-            let api_name = match &col.origin {
-                crate::catalog::types::ColumnOrigin::QueryParam { api_name }
-                | crate::catalog::types::ColumnOrigin::QueryParamAndResponseField { api_name } => {
-                    api_name.as_deref().unwrap_or(col.name.as_str())
-                }
-                _ => continue,
-            };
-            if let Some(val) = call.query_params.get(api_name) {
-                param_values.insert(col.name.clone(), val.clone());
-            }
-        }
-
+        let data = unwrap_response(&body, &call.endpoint.data_path);
         let page = response::json_to_result_set(data, &table.columns, &param_values)?;
 
-        // Merge page into accumulated results
         if all_columns.is_empty() {
             all_columns = page.columns;
         }
         all_rows.extend(page.rows);
 
-        // Without LIMIT: return first page only, no pagination
         if !paginate {
             break;
         }
 
-        // With LIMIT: check if we have enough rows
         if let Some(needed) = rows_needed {
             if all_rows.len() >= needed {
                 all_rows.truncate(needed);
@@ -186,22 +87,111 @@ async fn execute_paginated(
             }
         }
 
-        // Determine next page URL
-        // Priority: Link header > response body fields
         next_url = link_next.or_else(|| extract_next_url_from_body(&body));
-
         is_first_page = false;
     }
 
-    Ok(ResultSet {
-        columns: all_columns,
-        rows: all_rows,
-    })
+    Ok(ResultSet { columns: all_columns, rows: all_rows })
 }
 
+fn resolve_url(call: &ApiCall) -> Result<String> {
+    let string_params: HashMap<String, String> = call
+        .path_params
+        .iter()
+        .map(|(k, v)| (k.as_str().to_owned(), v.clone()))
+        .collect();
+
+    call.endpoint.url(&string_params).ok_or(Error::UnresolvedUrl)
+}
+
+fn build_param_values(
+    call: &ApiCall,
+    table: &crate::catalog::types::VirtualTable,
+) -> HashMap<ColumnName, String> {
+    let mut values: HashMap<ColumnName, String> = call.path_params.clone();
+    for col in table.pushdown_params() {
+        let param_key = col.api_name.as_deref().unwrap_or(col.name.as_str());
+        if let Some(val) = call.query_params.get(param_key) {
+            values.insert(col.name.clone(), val.clone());
+        }
+    }
+    values
+}
+
+/// Fetch a single page. Returns the JSON body and the Link-header next URL.
+async fn fetch_page(
+    client: &Client,
+    auth: &AuthConfig,
+    call: &ApiCall,
+    url: &str,
+    is_first_page: bool,
+) -> Result<(serde_json::Value, Option<String>)> {
+    let mut request = client
+        .get(url)
+        .header(ACCEPT, &call.endpoint.accept)
+        .header(USER_AGENT, "sqlize/0.1.0");
+
+    if let Some(token) = &auth.bearer_token {
+        request = request.header(AUTHORIZATION, format!("Bearer {token}"));
+    }
+
+    if is_first_page {
+        let query_params: Vec<(&str, &str)> = call
+            .query_params
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        request = request.query(&query_params);
+    }
+
+    tracing::debug!(%url, page = !is_first_page, "executing API call");
+
+    let resp = request.send().await?;
+
+    check_rate_limit(&resp);
+    let link_next = parse_link_next(resp.headers());
+
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(Error::ApiError {
+            status: status.as_u16(),
+            url: url.to_owned(),
+            body,
+        });
+    }
+
+    let body = resp.json().await?;
+    Ok((body, link_next))
+}
+
+fn check_rate_limit(resp: &reqwest::Response) {
+    if let Some(remaining) = resp.headers().get("x-ratelimit-remaining") {
+        if let Ok(s) = remaining.to_str() {
+            if let Ok(n) = s.parse::<u32>() {
+                if n < 100 {
+                    tracing::warn!(remaining = n, "API rate limit running low");
+                }
+            }
+        }
+    }
+}
+
+fn unwrap_response<'a>(
+    body: &'a serde_json::Value,
+    data_path: &Option<String>,
+) -> &'a serde_json::Value {
+    match data_path {
+        Some(field) => body.get(field.as_str()).unwrap_or(body),
+        None => body,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Pagination detection
+// ---------------------------------------------------------------------------
+
 /// Parse `Link` header for `rel="next"` URL (RFC 8288).
-///
-/// Example: `<https://api.github.com/repos/rust-lang/rust/issues?page=2>; rel="next"`
 fn parse_link_next(headers: &reqwest::header::HeaderMap) -> Option<String> {
     let link = headers.get("link")?.to_str().ok()?;
     for part in link.split(',') {
@@ -220,9 +210,6 @@ fn parse_link_next(headers: &reqwest::header::HeaderMap) -> Option<String> {
 }
 
 /// Check response body for common "next page" URL fields.
-///
-/// Covers APIs that put the next page URL in the response body instead of headers
-/// (e.g., Django REST Framework uses `"next": "https://..."`).
 fn extract_next_url_from_body(body: &serde_json::Value) -> Option<String> {
     let obj = body.as_object()?;
     for key in ["next", "next_url", "next_page", "next_page_url"] {

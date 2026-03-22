@@ -128,10 +128,8 @@ fn try_build_table(
     let response_columns = columns_from_schema(spec, item_schema, "")?;
     for resp_col in response_columns {
         if let Some(existing) = columns.iter_mut().find(|c| c.name == resp_col.name) {
-            if let ColumnOrigin::QueryParam { ref api_name } = existing.origin {
-                existing.origin = ColumnOrigin::QueryParamAndResponseField {
-                    api_name: api_name.clone(),
-                };
+            if matches!(existing.origin, ColumnOrigin::QueryParam) {
+                existing.origin = ColumnOrigin::QueryParamAndResponseField;
                 // Prefer the response field's metadata — it describes the value,
                 // not the filter semantics.
                 if resp_col.description.is_some() {
@@ -356,13 +354,7 @@ fn param_to_column(
     let (data, origin) = match param {
         Parameter::Path { parameter_data, .. } => (parameter_data, ColumnOrigin::PathParam),
         Parameter::Query { parameter_data, .. } => {
-            let col_name = crate::catalog::types::sanitize_name(&parameter_data.name);
-            let api_name = if col_name != parameter_data.name {
-                Some(parameter_data.name.clone())
-            } else {
-                None
-            };
-            (parameter_data, ColumnOrigin::QueryParam { api_name })
+            (parameter_data, ColumnOrigin::QueryParam)
         }
         // Skip header and cookie params — not useful in SQL
         _ => return Ok(None),
@@ -385,12 +377,22 @@ fn param_to_column(
         }
     });
 
+    let api_name = {
+        let sanitized = col_name.as_str();
+        if sanitized != data.name {
+            Some(data.name.clone())
+        } else {
+            None
+        }
+    };
+
     Ok(Some(Column {
         name: col_name,
         col_type,
         nullable: !data.required,
         description,
         origin,
+        api_name,
     }))
 }
 
