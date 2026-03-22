@@ -115,7 +115,7 @@ mod tests {
                 nullable: false,
                 description: None,
                 role: ColumnRole::PathParam,
-                api_name: "owner".to_owned(),
+                api_name: Some(crate::catalog::types::ApiParamName::new("owner")),
             },
             Column {
                 name: ColumnName::new("id").unwrap(),
@@ -123,7 +123,7 @@ mod tests {
                 nullable: false,
                 description: None,
                 role: ColumnRole::ResponseField,
-                api_name: "id".to_owned(),
+                api_name: None,
             },
             Column {
                 name: ColumnName::new("title").unwrap(),
@@ -131,7 +131,7 @@ mod tests {
                 nullable: false,
                 description: None,
                 role: ColumnRole::ResponseField,
-                api_name: "title".to_owned(),
+                api_name: None,
             },
             Column {
                 name: ColumnName::new("user_login").unwrap(),
@@ -139,7 +139,7 @@ mod tests {
                 nullable: true,
                 description: None,
                 role: ColumnRole::ResponseField,
-                api_name: "user_login".to_owned(),
+                api_name: None,
             },
         ]
     }
@@ -224,7 +224,7 @@ mod tests {
                 nullable: false,
                 description: None,
                 role: ColumnRole::QueryParamAndResponse,
-                api_name: "state".to_owned(),
+                api_name: Some(crate::catalog::types::ApiParamName::new("state")),
             },
             Column {
                 name: ColumnName::new("title").unwrap(),
@@ -232,7 +232,7 @@ mod tests {
                 nullable: false,
                 description: None,
                 role: ColumnRole::ResponseField,
-                api_name: "title".to_owned(),
+                api_name: None,
             },
         ];
 
@@ -262,7 +262,7 @@ mod tests {
                 nullable: false,
                 description: None,
                 role: ColumnRole::PathParam,
-                api_name: "owner".to_owned(),
+                api_name: Some(crate::catalog::types::ApiParamName::new("owner")),
             },
         ];
 

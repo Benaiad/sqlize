@@ -52,14 +52,13 @@ fn collect_columns(
                     let description = schema_description(resolved);
 
                     if let Ok(col_name) = ColumnName::new(&col_name_str) {
-                        let api_name = col_name.as_str().to_owned();
                         out.push(Column {
                             name: col_name,
                             col_type,
                             nullable: !is_required,
                             description,
                             role: ColumnRole::ResponseField,
-                            api_name,
+                            api_name: None,
                         });
                     }
                     // Skip columns with names that don't validate (rare edge cases)

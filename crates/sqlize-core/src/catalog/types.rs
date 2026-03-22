@@ -41,6 +41,20 @@ impl fmt::Display for TableName {
     }
 }
 
+/// An API parameter name as it appears in HTTP requests.
+/// May contain characters not valid in SQL column names (e.g., `created[gte]`).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ApiParamName(String);
+
+impl ApiParamName {
+    pub fn new(s: impl Into<String>) -> Self { Self(s.into()) }
+    pub fn as_str(&self) -> &str { &self.0 }
+}
+
+impl fmt::Display for ApiParamName {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { f.write_str(&self.0) }
+}
+
 /// A validated, non-empty column name containing only `[a-z0-9_]`.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ColumnName(String);
@@ -211,8 +225,17 @@ pub struct Column {
     pub nullable: bool,
     pub description: Option<String>,
     pub role: ColumnRole,
-    /// The API parameter name used in HTTP requests. Defaults to the column name.
-    pub api_name: String,
+    /// The API parameter name used in HTTP requests.
+    /// `Some` for path/query params, `None` for response-only fields.
+    pub api_name: Option<ApiParamName>,
+}
+
+impl Column {
+    /// The key to use when sending this column's value as an API parameter.
+    /// Falls back to the SQL column name when no explicit API name is set.
+    pub fn api_param_key(&self) -> &str {
+        self.api_name.as_ref().map(|n| n.as_str()).unwrap_or(self.name.as_str())
+    }
 }
 
 // ---------------------------------------------------------------------------

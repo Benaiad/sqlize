@@ -251,10 +251,9 @@ fn classify_single_condition(
             })
         }
         Some(col) if col.role.is_pushable() && !col.role.is_required() && filter_op == FilterOp::Eq => {
-            let param_name = col.api_name.clone();
             let value_str = filter_value_to_string(&filter_value);
             Ok(ConditionClass::QueryParam {
-                api_name: param_name,
+                api_name: col.api_param_key().to_owned(),
                 value: value_str,
             })
         }
@@ -558,7 +557,7 @@ mod tests {
                     nullable: false,
                     description: None,
                     role: ColumnRole::PathParam,
-                    api_name: "owner".to_owned(),
+                    api_name: Some(ApiParamName::new("owner")),
                 },
                 Column {
                     name: ColumnName::new("repo").unwrap(),
@@ -566,7 +565,7 @@ mod tests {
                     nullable: false,
                     description: None,
                     role: ColumnRole::PathParam,
-                    api_name: "repo".to_owned(),
+                    api_name: Some(ApiParamName::new("repo")),
                 },
                 Column {
                     name: ColumnName::new("state").unwrap(),
@@ -574,7 +573,7 @@ mod tests {
                     nullable: false,
                     description: None,
                     role: ColumnRole::QueryParam,
-                    api_name: "state".to_owned(),
+                    api_name: Some(ApiParamName::new("state")),
                 },
                 Column {
                     name: ColumnName::new("id").unwrap(),
@@ -582,7 +581,7 @@ mod tests {
                     nullable: false,
                     description: None,
                     role: ColumnRole::ResponseField,
-                    api_name: "id".to_owned(),
+                    api_name: None,
                 },
                 Column {
                     name: ColumnName::new("number").unwrap(),
@@ -590,7 +589,7 @@ mod tests {
                     nullable: false,
                     description: None,
                     role: ColumnRole::ResponseField,
-                    api_name: "number".to_owned(),
+                    api_name: None,
                 },
                 Column {
                     name: ColumnName::new("title").unwrap(),
@@ -598,7 +597,7 @@ mod tests {
                     nullable: false,
                     description: None,
                     role: ColumnRole::ResponseField,
-                    api_name: "title".to_owned(),
+                    api_name: None,
                 },
                 Column {
                     name: ColumnName::new("created_at").unwrap(),
@@ -606,7 +605,7 @@ mod tests {
                     nullable: false,
                     description: None,
                     role: ColumnRole::ResponseField,
-                    api_name: "created_at".to_owned(),
+                    api_name: None,
                 },
             ],
             endpoint: ApiEndpoint {

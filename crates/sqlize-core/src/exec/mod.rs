@@ -112,7 +112,7 @@ fn build_param_values(
 ) -> HashMap<ColumnName, String> {
     let mut values: HashMap<ColumnName, String> = call.path_params.clone();
     for col in table.pushdown_params() {
-        let param_key = col.api_name.as_str();
+        let param_key = col.api_param_key();
         if let Some(val) = call.query_params.get(param_key) {
             values.insert(col.name.clone(), val.clone());
         }

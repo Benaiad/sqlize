@@ -85,7 +85,7 @@ mod tests {
                     nullable: false,
                     description: Some("Repository owner".to_owned()),
                     role: ColumnRole::PathParam,
-                    api_name: "owner".to_owned(),
+                    api_name: Some(ApiParamName::new("owner")),
                 },
                 Column {
                     name: ColumnName::new("repo").unwrap(),
@@ -93,7 +93,7 @@ mod tests {
                     nullable: false,
                     description: Some("Repository name".to_owned()),
                     role: ColumnRole::PathParam,
-                    api_name: "repo".to_owned(),
+                    api_name: Some(ApiParamName::new("repo")),
                 },
                 Column {
                     name: ColumnName::new("id").unwrap(),
@@ -101,7 +101,7 @@ mod tests {
                     nullable: false,
                     description: Some("Issue ID".to_owned()),
                     role: ColumnRole::ResponseField,
-                    api_name: "id".to_owned(),
+                    api_name: None,
                 },
                 Column {
                     name: ColumnName::new("title").unwrap(),
@@ -109,7 +109,7 @@ mod tests {
                     nullable: false,
                     description: Some("Issue title".to_owned()),
                     role: ColumnRole::ResponseField,
-                    api_name: "title".to_owned(),
+                    api_name: None,
                 },
                 Column {
                     name: ColumnName::new("state").unwrap(),
@@ -117,7 +117,7 @@ mod tests {
                     nullable: false,
                     description: Some("open or closed".to_owned()),
                     role: ColumnRole::QueryParam,
-                    api_name: "state".to_owned(),
+                    api_name: Some(ApiParamName::new("state")),
                 },
             ],
             endpoint: ApiEndpoint {

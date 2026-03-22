@@ -4,8 +4,8 @@ use openapiv3::{
 };
 
 use crate::catalog::types::{
-    ApiEndpoint, Column, ColumnName, ColumnRole, ColumnType, HttpMethod, PathTemplate,
-    VirtualTable,
+    ApiEndpoint, ApiParamName, Column, ColumnName, ColumnRole, ColumnType, HttpMethod,
+    PathTemplate, VirtualTable,
 };
 use crate::error::{Error, Result};
 
@@ -379,7 +379,7 @@ fn param_to_column(
         nullable: !data.required,
         description,
         role,
-        api_name: data.name.clone(),
+        api_name: Some(ApiParamName::new(data.name.clone())),
     }))
 }
 
