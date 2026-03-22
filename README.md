@@ -134,6 +134,18 @@ The planner classifies each `WHERE` condition:
 
 Path parameters are required — omitting them fails at query planning, before any HTTP call is made.
 
+## Pagination
+
+Queries without `LIMIT` return a single page of results (whatever the API's default page size is). Add `LIMIT` to fetch across multiple pages automatically:
+
+```sql
+SELECT number, title FROM issues
+WHERE owner = 'rust-lang' AND repo = 'rust'
+LIMIT 250;
+```
+
+sqlize follows pagination using the standard `Link` header (`rel="next"`) or common response body fields (`next`, `next_url`). This works with GitHub, GitLab, Stripe, and most REST APIs without configuration.
+
 ## Why SQL
 
 REST APIs are imperative — you need to know the endpoint, the parameters, the pagination scheme, the response shape. SQL is declarative — you say what you want and the engine figures out how to get it. The mapping is natural: endpoints become tables, parameters become columns, and the query planner translates SQL into API calls.
@@ -144,4 +156,4 @@ Research and competitive analysis in [`research/`](research/).
 
 Research prototype. The core pipeline works end-to-end against live APIs. Not production-hardened.
 
-What's missing: JOINs across tables, pagination beyond the first page, write operations (procedures for mutations), caching, and multi-API federation.
+What's missing: JOINs across tables.
