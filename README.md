@@ -111,7 +111,7 @@ claude mcp add \
 
 ```sql
 SELECT number, title FROM issues
-WHERE owner = 'anthropics' AND repo = 'claude-code' AND state = 'open'
+WHERE owner = 'openclaw' AND repo = 'openclaw' AND state = 'open'
 ORDER BY created_at DESC
 LIMIT 10
 ```
@@ -120,8 +120,8 @@ The planner classifies each `WHERE` condition:
 
 | Condition | Classification | Effect |
 |-----------|---------------|--------|
-| `owner = 'anthropics'` | Path parameter | Substituted into URL: `/repos/anthropics/{repo}/issues` |
-| `repo = 'claude-code'` | Path parameter | Substituted into URL: `/repos/anthropics/claude-code/issues` |
+| `owner = 'openclaw'` | Path parameter | Substituted into URL: `/repos/openclaw/{repo}/issues` |
+| `repo = 'openclaw'` | Path parameter | Substituted into URL: `/repos/openclaw/openclaw/issues` |
 | `state = 'open'` | Query parameter | Pushed to API: `?state=open` |
 | `ORDER BY created_at DESC` | Post-processing | Applied locally after fetch |
 | `LIMIT 10` | Post-processing | Applied locally after fetch |
