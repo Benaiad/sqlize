@@ -2,3 +2,4 @@
 .idea/
 specs/*.json
 !specs/*-minimal.json
+vhs-demo/*.mp4

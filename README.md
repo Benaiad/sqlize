@@ -4,6 +4,8 @@ SQL interface for REST APIs.
 
 Point sqlize at an OpenAPI spec and query any REST API using SQL. Path parameters become `WHERE` clauses, query parameters become filters, response fields become columns. One tool, any API.
 
+![sqlize demo](vhs-demo/demo.gif)
+
 ## How it works
 
 ```sh
