@@ -503,11 +503,24 @@ fn explain_source(source: &PlanSource, out: &mut String, indent: usize) {
                 "{pad}ApiCall: {} {} {}\n",
                 call.table, call.endpoint.method, call.endpoint.path
             ));
-            if !call.params.is_empty() {
-                let params: Vec<String> = call.params.iter()
-                    .map(|(k, v)| format!("{k} = {v}"))
-                    .collect();
-                out.push_str(&format!("{pad}  params: {}\n", params.join(", ")));
+            let mut path_params = Vec::new();
+            let mut query_params = Vec::new();
+            for col in &call.columns {
+                let key = crate::catalog::types::ApiParamName::new(col.api_param_key());
+                if let Some(val) = call.params.get(&key) {
+                    let entry = format!("{} = {val}", col.name);
+                    if col.role.is_required() {
+                        path_params.push(entry);
+                    } else if col.role.is_pushable() {
+                        query_params.push(entry);
+                    }
+                }
+            }
+            if !path_params.is_empty() {
+                out.push_str(&format!("{pad}  path: {}\n", path_params.join(", ")));
+            }
+            if !query_params.is_empty() {
+                out.push_str(&format!("{pad}  query: {}\n", query_params.join(", ")));
             }
         }
     }
@@ -657,7 +670,8 @@ mod tests {
 
         let output = explain(&plan);
         assert!(output.contains("ApiCall: issues GET /repos/{owner}/{repo}/issues"));
-        assert!(output.contains("anthropics"));
+        assert!(output.contains("path: owner = anthropics"));
+        assert!(output.contains("query: state = open"));
         assert!(output.contains("Limit: 5"));
     }
 
