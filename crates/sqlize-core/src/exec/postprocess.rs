@@ -29,7 +29,7 @@ fn row_matches_filter(row: &Row, columns: &[ColumnName], filter: &LocalFilter) -
         return true; // Column not in result — don't filter
     };
 
-    let value = &row.0[idx];
+    let value = &row.values()[idx];
 
     match filter.op {
         FilterOp::IsNull => matches!(value, Value::Null),
@@ -92,7 +92,7 @@ fn apply_order_by(order_by: &[OrderByItem], result: &mut ResultSet) {
 
     result.rows.sort_by(|a, b| {
         for &(idx, descending) in &col_indices {
-            let cmp = compare_values(&a.0[idx], &b.0[idx]);
+            let cmp = compare_values(&a.values()[idx], &b.values()[idx]);
             let cmp = if descending { cmp.reverse() } else { cmp };
             if cmp != std::cmp::Ordering::Equal {
                 return cmp;
@@ -172,8 +172,8 @@ fn apply_projections(projections: &[Projection], result: &mut ResultSet) {
         .rows
         .iter()
         .map(|row| {
-            let values = selected.iter().map(|(idx, _)| row.0[*idx].clone()).collect();
-            Row(values)
+            let values = selected.iter().map(|(idx, _)| row.values()[*idx].clone()).collect();
+            Row::new(values)
         })
         .collect();
 
@@ -193,9 +193,9 @@ mod tests {
                 ColumnName::new("age").unwrap(),
             ],
             rows: vec![
-                Row(vec![Value::Integer(1), Value::String("alice".into()), Value::Integer(30)]),
-                Row(vec![Value::Integer(2), Value::String("bob".into()), Value::Integer(25)]),
-                Row(vec![Value::Integer(3), Value::String("charlie".into()), Value::Integer(35)]),
+                Row::new(vec![Value::Integer(1), Value::String("alice".into()), Value::Integer(30)]),
+                Row::new(vec![Value::Integer(2), Value::String("bob".into()), Value::Integer(25)]),
+                Row::new(vec![Value::Integer(3), Value::String("charlie".into()), Value::Integer(35)]),
             ],
         }
     }
@@ -210,7 +210,7 @@ mod tests {
         }];
         apply_local_filters(&filters, &mut result);
         assert_eq!(result.rows.len(), 1);
-        assert_eq!(result.rows[0].0[0], Value::Integer(2));
+        assert_eq!(result.rows[0].values()[0], Value::Integer(2));
     }
 
     #[test]
@@ -233,8 +233,8 @@ mod tests {
             descending: true,
         }];
         apply_order_by(&order, &mut result);
-        assert_eq!(result.rows[0].0[2], Value::Integer(35)); // charlie first
-        assert_eq!(result.rows[2].0[2], Value::Integer(25)); // bob last
+        assert_eq!(result.rows[0].values()[2], Value::Integer(35)); // charlie first
+        assert_eq!(result.rows[2].values()[2], Value::Integer(25)); // bob last
     }
 
     #[test]
@@ -243,7 +243,7 @@ mod tests {
         apply_offset(Some(1), &mut result);
         apply_limit(Some(1), &mut result);
         assert_eq!(result.rows.len(), 1);
-        assert_eq!(result.rows[0].0[0], Value::Integer(2)); // bob
+        assert_eq!(result.rows[0].values()[0], Value::Integer(2)); // bob
     }
 
     #[test]
@@ -263,6 +263,6 @@ mod tests {
         assert_eq!(result.columns.len(), 2);
         assert_eq!(result.columns[0].as_str(), "name");
         assert_eq!(result.columns[1].as_str(), "issue_id");
-        assert_eq!(result.rows[0].0.len(), 2);
+        assert_eq!(result.rows[0].len(), 2);
     }
 }

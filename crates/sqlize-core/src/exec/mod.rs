@@ -57,8 +57,10 @@ async fn execute_api_call(
     let table = catalog.require(&call.table)?;
     let param_values = build_param_values(call, table);
 
-    let rows_needed = limit.map(|l| (l as usize).min(MAX_ROWS));
-    let paginate = rows_needed.is_some();
+    let rows_needed = match limit {
+        Some(l) => (l as usize).min(MAX_ROWS),
+        None => MAX_ROWS,
+    };
 
     let mut all_columns: Vec<ColumnName> = Vec::new();
     let mut all_rows: Vec<Row> = Vec::new();
@@ -76,15 +78,9 @@ async fn execute_api_call(
         }
         all_rows.extend(page.rows);
 
-        if !paginate {
+        if all_rows.len() >= rows_needed {
+            all_rows.truncate(rows_needed);
             break;
-        }
-
-        if let Some(needed) = rows_needed {
-            if all_rows.len() >= needed {
-                all_rows.truncate(needed);
-                break;
-            }
         }
 
         next_url = link_next.or_else(|| extract_next_url_from_body(&body));
@@ -110,7 +106,7 @@ fn build_param_values(
 ) -> HashMap<ColumnName, String> {
     let mut values: HashMap<ColumnName, String> = call.path_params.clone();
     for col in table.pushdown_params() {
-        let param_key = col.api_name.as_deref().unwrap_or(col.name.as_str());
+        let param_key = col.api_name.as_str();
         if let Some(val) = call.query_params.get(param_key) {
             values.insert(col.name.clone(), val.clone());
         }

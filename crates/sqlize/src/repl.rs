@@ -322,23 +322,40 @@ pub async fn run(catalog: Arc<Catalog>, auth: AuthConfig, client: Client, format
     }
 }
 
-async fn dispatch(catalog: &Catalog, auth: &AuthConfig, client: &Client, input: &str, format: OutputFormat) {
-    let upper = input.to_ascii_uppercase();
+enum ReplCommand<'a> {
+    ShowTables,
+    Describe(&'a str),
+    Explain(&'a str),
+    Schema,
+    Quit,
+    Query(&'a str),
+}
 
+fn parse_command(input: &str) -> ReplCommand<'_> {
+    let upper = input.to_ascii_uppercase();
     if upper == "SHOW TABLES" || upper == "\\D" {
-        handle_show_tables(catalog);
+        ReplCommand::ShowTables
     } else if upper.starts_with("DESCRIBE ") || upper.starts_with("\\D ") {
-        let table_name = input.split_whitespace().nth(1).unwrap_or("");
-        handle_describe(catalog, table_name);
+        ReplCommand::Describe(input.split_whitespace().nth(1).unwrap_or(""))
     } else if upper.starts_with("EXPLAIN ") {
-        let sql = input.strip_prefix("EXPLAIN ").or_else(|| input.strip_prefix("explain ")).unwrap_or(input);
-        handle_explain(catalog, sql);
+        ReplCommand::Explain(&input[8..])
     } else if upper == "SCHEMA" || upper == "DDL" {
-        println!("{}", catalog_ddl(catalog));
+        ReplCommand::Schema
     } else if upper == "QUIT" || upper == "EXIT" || upper == "\\Q" {
-        std::process::exit(0);
+        ReplCommand::Quit
     } else {
-        handle_query(catalog, auth, client, input, format).await;
+        ReplCommand::Query(input)
+    }
+}
+
+async fn dispatch(catalog: &Catalog, auth: &AuthConfig, client: &Client, input: &str, format: OutputFormat) {
+    match parse_command(input) {
+        ReplCommand::ShowTables => handle_show_tables(catalog),
+        ReplCommand::Describe(name) => handle_describe(catalog, name),
+        ReplCommand::Explain(sql) => handle_explain(catalog, sql),
+        ReplCommand::Schema => println!("{}", catalog_ddl(catalog)),
+        ReplCommand::Quit => std::process::exit(0),
+        ReplCommand::Query(sql) => handle_query(catalog, auth, client, sql, format).await,
     }
 }
 
@@ -418,7 +435,7 @@ async fn handle_query(catalog: &Catalog, auth: &AuthConfig, client: &Client, sql
                 builder.push_record(headers);
 
                 for row in &result.rows {
-                    let values: Vec<String> = row.0.iter().map(format_value).collect();
+                    let values: Vec<String> = row.values().iter().map(format_value).collect();
                     builder.push_record(values);
                 }
 
@@ -455,7 +472,7 @@ fn print_expanded(result: &ResultSet) {
         let separator_len = term_width().saturating_sub(label.len()).saturating_sub(1);
         println!("{}{}", label, "-".repeat(separator_len));
 
-        for (col, val) in result.columns.iter().zip(row.0.iter()) {
+        for (col, val) in result.columns.iter().zip(row.values().iter()) {
             println!("{:>width$} | {}", col.as_str(), format_value(val), width = max_col_width);
         }
     }

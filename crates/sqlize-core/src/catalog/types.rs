@@ -164,17 +164,28 @@ impl fmt::Display for ColumnType {
 // Column origin — where this column comes from in the API
 // ---------------------------------------------------------------------------
 
-/// Describes how a column maps back to the underlying API request.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ColumnOrigin {
-    /// From a URL path placeholder (e.g., `{owner}`). Always required in WHERE.
+/// Where the column's data comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColumnSource {
+    /// URL path placeholder (e.g., `{owner}`).
     PathParam,
-    /// From an API query parameter (e.g., `?state=open`). Pushed down when filtered.
+    /// API query parameter only (not in the response body).
     QueryParam,
-    /// From the response body. Cannot influence the API call.
+    /// Response body field.
     ResponseField,
     /// Both a query parameter and a response field (e.g., `state`).
-    QueryParamAndResponseField,
+    QueryParamAndResponse,
+}
+
+/// How a column's filter is handled during execution.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PushdownKind {
+    /// Must appear in WHERE — path parameters.
+    Required,
+    /// Pushed to the API when present in WHERE.
+    Optional,
+    /// Evaluated locally after fetching.
+    LocalOnly,
 }
 
 // ---------------------------------------------------------------------------
@@ -187,10 +198,10 @@ pub struct Column {
     pub col_type: ColumnType,
     pub nullable: bool,
     pub description: Option<String>,
-    pub origin: ColumnOrigin,
-    /// The API parameter name, when different from the column name.
-    /// Only meaningful for QueryParam and QueryParamAndResponseField origins.
-    pub api_name: Option<String>,
+    pub source: ColumnSource,
+    pub pushdown: PushdownKind,
+    /// The API parameter name used in HTTP requests. Defaults to the column name.
+    pub api_name: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -256,25 +267,30 @@ pub struct VirtualTable {
 }
 
 impl VirtualTable {
-    /// Columns that are path parameters — must appear in every WHERE clause.
+    /// Look up a column by name.
+    pub fn column(&self, name: &ColumnName) -> Option<&Column> {
+        self.columns.iter().find(|c| c.name == *name)
+    }
+
+    /// Columns that must appear in every WHERE clause.
     pub fn required_params(&self) -> impl Iterator<Item = &Column> {
         self.columns
             .iter()
-            .filter(|c| matches!(c.origin, ColumnOrigin::PathParam))
+            .filter(|c| matches!(c.pushdown, PushdownKind::Required))
     }
 
     /// Columns that can be pushed down as query parameters.
     pub fn pushdown_params(&self) -> impl Iterator<Item = &Column> {
         self.columns
             .iter()
-            .filter(|c| matches!(c.origin, ColumnOrigin::QueryParam | ColumnOrigin::QueryParamAndResponseField))
+            .filter(|c| matches!(c.pushdown, PushdownKind::Optional))
     }
 
     /// Columns that come from the response body.
     pub fn response_columns(&self) -> impl Iterator<Item = &Column> {
         self.columns
             .iter()
-            .filter(|c| matches!(c.origin, ColumnOrigin::ResponseField))
+            .filter(|c| matches!(c.source, ColumnSource::ResponseField))
     }
 }
 
@@ -283,15 +299,27 @@ impl VirtualTable {
 // ---------------------------------------------------------------------------
 
 /// Sanitize an API field name to a valid column/table name.
-/// `camelCase` → `camel_case`, hyphens/dots → underscores, uppercase → lowercase.
+/// Handles camelCase, acronyms, hyphens, and dots:
+/// - `createdAt` → `created_at`
+/// - `HTMLParser` → `html_parser`
+/// - `APIKey` → `api_key`
+/// - `pull-request` → `pull_request`
 pub fn sanitize_name(name: &str) -> String {
     let mut result = String::with_capacity(name.len() + 4);
-    for (i, ch) in name.chars().enumerate() {
+    let chars: Vec<char> = name.chars().collect();
+    for (i, &ch) in chars.iter().enumerate() {
         if ch == '-' || ch == '.' {
             result.push('_');
         } else if ch.is_ascii_uppercase() {
             if i > 0 {
-                result.push('_');
+                let prev_lower = chars[i - 1].is_ascii_lowercase();
+                let next_lower = chars.get(i + 1).is_some_and(|c| c.is_ascii_lowercase());
+                // Insert underscore before uppercase when:
+                // - previous char was lowercase (camelCase boundary), OR
+                // - next char is lowercase and previous was uppercase (end of acronym)
+                if prev_lower || (next_lower && chars[i - 1].is_ascii_uppercase()) {
+                    result.push('_');
+                }
             }
             result.push(ch.to_ascii_lowercase());
         } else {
@@ -299,6 +327,22 @@ pub fn sanitize_name(name: &str) -> String {
         }
     }
     result
+}
+
+// ---------------------------------------------------------------------------
+// Text utilities
+// ---------------------------------------------------------------------------
+
+/// Truncate a string to `max_chars` characters, appending "..." if truncated.
+/// Takes the first line only. Safe for multi-byte UTF-8.
+pub fn truncate_str(s: &str, max_chars: usize) -> String {
+    let first_line = s.lines().next().unwrap_or(s);
+    if first_line.chars().count() <= max_chars {
+        first_line.to_owned()
+    } else {
+        let truncated: String = first_line.chars().take(max_chars.saturating_sub(3)).collect();
+        format!("{truncated}...")
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -331,11 +375,36 @@ impl fmt::Display for Value {
 
 /// A row of values, ordered to match `ResultSet.columns`.
 #[derive(Debug, Clone)]
-pub struct Row(pub Vec<Value>);
+pub struct Row(Vec<Value>);
+
+impl Row {
+    pub fn new(values: Vec<Value>) -> Self {
+        Self(values)
+    }
+
+    pub fn get(&self, idx: usize) -> Option<&Value> {
+        self.0.get(idx)
+    }
+
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    pub fn values(&self) -> &[Value] {
+        &self.0
+    }
+}
 
 /// The result of executing a query.
 #[derive(Debug, Clone)]
 pub struct ResultSet {
     pub columns: Vec<ColumnName>,
     pub rows: Vec<Row>,
+}
+
+impl ResultSet {
+    /// Find the index of a column by name.
+    pub fn column_index(&self, name: &ColumnName) -> Option<usize> {
+        self.columns.iter().position(|c| *c == *name)
+    }
 }

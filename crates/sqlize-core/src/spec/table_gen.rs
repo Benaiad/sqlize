@@ -4,7 +4,7 @@ use openapiv3::{
 };
 
 use crate::catalog::types::{
-    ApiEndpoint, Column, ColumnName, ColumnOrigin, ColumnType, HttpMethod, PathTemplate,
+    ApiEndpoint, Column, ColumnName, ColumnSource, PushdownKind, ColumnType, HttpMethod, PathTemplate,
     VirtualTable,
 };
 use crate::error::{Error, Result};
@@ -44,37 +44,38 @@ pub fn tables_from_spec(
         }
     }
 
-    // Deduplicate: use a map keyed by table name.
-    // On collision, try qualified name. If still colliding, use full path-based name.
-    let mut seen: std::collections::HashMap<String, usize> =
+    // Detect name collisions, then qualify ALL colliding names (not just the second).
+    // This makes the result deterministic regardless of spec path ordering.
+    let mut name_counts: std::collections::HashMap<String, usize> =
         std::collections::HashMap::new();
+    for (_, table) in &candidates {
+        *name_counts.entry(table.name.as_str().to_owned()).or_default() += 1;
+    }
+
     let mut tables = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     for (path_str, mut table) in candidates {
-        let original_name = table.name.as_str().to_owned();
-
-        if seen.contains_key(&original_name) {
-            // Try qualified name first
+        if name_counts.get(table.name.as_str()).copied().unwrap_or(1) > 1 {
             if let Ok(qualified) = derive_qualified_table_name(&path_str) {
                 table.name = qualified;
             }
+        }
 
-            // If still colliding, append a numeric suffix
-            let mut final_name = table.name.as_str().to_owned();
-            while seen.contains_key(&final_name) {
-                let count = seen.entry(final_name.clone()).or_default();
-                *count += 1;
-                final_name = format!("{}_{}", table.name.as_str(), count);
-            }
-
-            if final_name != table.name.as_str() {
-                if let Ok(suffixed) = crate::catalog::types::TableName::new(&final_name) {
-                    table.name = suffixed;
-                }
+        // Final dedup: numeric suffix if still colliding
+        let mut final_name = table.name.as_str().to_owned();
+        let mut counter = 2;
+        while seen.contains(&final_name) {
+            final_name = format!("{}_{counter}", table.name.as_str());
+            counter += 1;
+        }
+        if final_name != table.name.as_str() {
+            if let Ok(suffixed) = crate::catalog::types::TableName::new(&final_name) {
+                table.name = suffixed;
             }
         }
 
-        seen.insert(table.name.as_str().to_owned(), 1);
+        seen.insert(table.name.as_str().to_owned());
         tables.push(table);
     }
 
@@ -108,9 +109,9 @@ fn try_build_table(
         .map_err(|_| Error::InvalidPath { path: path_str.to_owned(), reason: "invalid path template" })?;
 
     // Build columns from three sources:
-    // 1. Path parameters → ColumnOrigin::PathParam
-    // 2. Query parameters → ColumnOrigin::QueryParam
-    // 3. Response schema → ColumnOrigin::ResponseField
+    // 1. Path parameters → ColumnSource, PushdownKind::PathParam
+    // 2. Query parameters → ColumnSource, PushdownKind::QueryParam
+    // 3. Response schema → ColumnSource, PushdownKind::ResponseField
     let mut columns = Vec::new();
 
     // Path parameters from both the path item and the operation
@@ -128,8 +129,8 @@ fn try_build_table(
     let response_columns = columns_from_schema(spec, item_schema, "")?;
     for resp_col in response_columns {
         if let Some(existing) = columns.iter_mut().find(|c| c.name == resp_col.name) {
-            if matches!(existing.origin, ColumnOrigin::QueryParam) {
-                existing.origin = ColumnOrigin::QueryParamAndResponseField;
+            if matches!(existing.source, ColumnSource::QueryParam) {
+                existing.source = ColumnSource::QueryParamAndResponse;
                 // Prefer the response field's metadata — it describes the value,
                 // not the filter semantics.
                 if resp_col.description.is_some() {
@@ -351,12 +352,13 @@ fn param_to_column(
     spec: &OpenAPI,
     param: &Parameter,
 ) -> Result<Option<Column>> {
-    let (data, origin) = match param {
-        Parameter::Path { parameter_data, .. } => (parameter_data, ColumnOrigin::PathParam),
-        Parameter::Query { parameter_data, .. } => {
-            (parameter_data, ColumnOrigin::QueryParam)
+    let (data, source, pushdown) = match param {
+        Parameter::Path { parameter_data, .. } => {
+            (parameter_data, ColumnSource::PathParam, PushdownKind::Required)
         }
-        // Skip header and cookie params — not useful in SQL
+        Parameter::Query { parameter_data, .. } => {
+            (parameter_data, ColumnSource::QueryParam, PushdownKind::Optional)
+        }
         _ => return Ok(None),
     };
 
@@ -368,31 +370,17 @@ fn param_to_column(
 
     let col_type = param_schema_to_type(spec, &data.format);
 
-    let description = data.description.as_ref().map(|d| {
-        let first_line = d.lines().next().unwrap_or(d);
-        if first_line.len() > 120 {
-            format!("{}...", &first_line[..117])
-        } else {
-            first_line.to_owned()
-        }
-    });
-
-    let api_name = {
-        let sanitized = col_name.as_str();
-        if sanitized != data.name {
-            Some(data.name.clone())
-        } else {
-            None
-        }
-    };
+    let description = data.description.as_ref()
+        .map(|d| crate::catalog::types::truncate_str(d, 120));
 
     Ok(Some(Column {
         name: col_name,
         col_type,
         nullable: !data.required,
         description,
-        origin,
-        api_name,
+        source,
+        pushdown,
+        api_name: data.name.clone(),
     }))
 }
 

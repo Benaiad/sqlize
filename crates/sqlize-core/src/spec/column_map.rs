@@ -1,6 +1,6 @@
 use openapiv3::{OpenAPI, ReferenceOr, Schema, SchemaKind, Type as OaType};
 
-use crate::catalog::types::{Column, ColumnName, ColumnOrigin, ColumnType, sanitize_name};
+use crate::catalog::types::{Column, ColumnName, ColumnSource, PushdownKind, ColumnType, sanitize_name};
 use crate::error::Result;
 
 /// Extract columns from a response schema, flattening one level of nesting.
@@ -52,13 +52,15 @@ fn collect_columns(
                     let description = schema_description(resolved);
 
                     if let Ok(col_name) = ColumnName::new(&col_name_str) {
+                        let api_name = col_name.as_str().to_owned();
                         out.push(Column {
                             name: col_name,
                             col_type,
                             nullable: !is_required,
                             description,
-                            origin: ColumnOrigin::ResponseField,
-                            api_name: None,
+                            source: ColumnSource::ResponseField,
+                    pushdown: PushdownKind::LocalOnly,
+                            api_name,
                         });
                     }
                     // Skip columns with names that don't validate (rare edge cases)
@@ -99,16 +101,7 @@ fn schema_description(schema: &Schema) -> Option<String> {
         .schema_data
         .description
         .as_ref()
-        .map(|d| truncate_description(d, 120))
-}
-
-fn truncate_description(s: &str, max: usize) -> String {
-    let first_line = s.lines().next().unwrap_or(s);
-    if first_line.len() <= max {
-        first_line.to_owned()
-    } else {
-        format!("{}...", &first_line[..max - 3])
-    }
+        .map(|d| crate::catalog::types::truncate_str(d, 120))
 }
 
 fn required_set(schema: &Schema) -> std::collections::HashSet<&str> {
@@ -163,7 +156,9 @@ mod tests {
     fn sanitize_camel_case() {
         assert_eq!(sanitize_name("createdAt"), "created_at");
         assert_eq!(sanitize_name("userId"), "user_id");
-        assert_eq!(sanitize_name("HTMLParser"), "h_t_m_l_parser");
+        assert_eq!(sanitize_name("HTMLParser"), "html_parser");
+        assert_eq!(sanitize_name("APIKey"), "api_key");
+        assert_eq!(sanitize_name("getHTTPSUrl"), "get_https_url");
     }
 
     #[test]

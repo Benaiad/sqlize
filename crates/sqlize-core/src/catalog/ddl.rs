@@ -1,7 +1,7 @@
 use std::fmt::Write;
 
 use super::Catalog;
-use super::types::{ColumnOrigin, VirtualTable};
+use super::types::{PushdownKind, VirtualTable};
 
 /// Generate a `CREATE TABLE` DDL statement for a single virtual table.
 /// Includes column descriptions as inline comments for LLM consumption.
@@ -35,11 +35,10 @@ pub fn table_ddl(table: &VirtualTable) -> String {
         };
         let nullable = if col.nullable { "" } else { " NOT NULL" };
 
-        let origin_tag = match &col.origin {
-            ColumnOrigin::PathParam => " [required param]",
-            ColumnOrigin::QueryParam => " [filterable]",
-            ColumnOrigin::QueryParamAndResponseField => " [filterable]",
-            ColumnOrigin::ResponseField => "",
+        let origin_tag = match col.pushdown {
+            PushdownKind::Required => " [required param]",
+            PushdownKind::Optional => " [filterable]",
+            PushdownKind::LocalOnly => "",
         };
 
         let comment = match &col.description {
@@ -85,39 +84,44 @@ mod tests {
                     col_type: ColumnType::String,
                     nullable: false,
                     description: Some("Repository owner".to_owned()),
-                    origin: ColumnOrigin::PathParam,
-                    api_name: None,
+                    source: ColumnSource::PathParam,
+                    pushdown: PushdownKind::Required,
+                    api_name: "owner".to_owned(),
                 },
                 Column {
                     name: ColumnName::new("repo").unwrap(),
                     col_type: ColumnType::String,
                     nullable: false,
                     description: Some("Repository name".to_owned()),
-                    origin: ColumnOrigin::PathParam,
-                    api_name: None,
+                    source: ColumnSource::PathParam,
+                    pushdown: PushdownKind::Required,
+                    api_name: "repo".to_owned(),
                 },
                 Column {
                     name: ColumnName::new("id").unwrap(),
                     col_type: ColumnType::Integer,
                     nullable: false,
                     description: Some("Issue ID".to_owned()),
-                    origin: ColumnOrigin::ResponseField,
-                    api_name: None,
+                    source: ColumnSource::ResponseField,
+                    pushdown: PushdownKind::LocalOnly,
+                    api_name: "id".to_owned(),
                 },
                 Column {
                     name: ColumnName::new("title").unwrap(),
                     col_type: ColumnType::String,
                     nullable: false,
                     description: Some("Issue title".to_owned()),
-                    origin: ColumnOrigin::ResponseField,
-                    api_name: None,
+                    source: ColumnSource::ResponseField,
+                    pushdown: PushdownKind::LocalOnly,
+                    api_name: "title".to_owned(),
                 },
                 Column {
                     name: ColumnName::new("state").unwrap(),
                     col_type: ColumnType::String,
                     nullable: false,
                     description: Some("open or closed".to_owned()),
-                    origin: ColumnOrigin::QueryParam, api_name: None,
+                    source: ColumnSource::QueryParam,
+                    pushdown: PushdownKind::Optional, api_name: "state".to_owned(),
                 },
             ],
             endpoint: ApiEndpoint {

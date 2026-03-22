@@ -104,7 +104,7 @@ impl SqlizeServer {
                     out.push_str(&format!(
                         "  {:<30} -- {}{}\n",
                         table.name,
-                        truncate_desc(&table.description, 60),
+                        sqlize_core::catalog::types::truncate_str(&table.description, 60),
                         req,
                     ));
                 }
@@ -158,15 +158,6 @@ impl SqlizeServer {
             Ok(plan) => explain(&plan),
             Err(e) => format!("Error: {e}"),
         }
-    }
-}
-
-fn truncate_desc(s: &str, max: usize) -> String {
-    let first_line = s.lines().next().unwrap_or(s);
-    if first_line.len() <= max {
-        first_line.to_owned()
-    } else {
-        format!("{}...", &first_line[..max - 3])
     }
 }
 

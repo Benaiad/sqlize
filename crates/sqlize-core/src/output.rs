@@ -28,7 +28,7 @@ fn result_set_to_json_value(result: &ResultSet) -> JsonValue {
         .iter()
         .map(|row| {
             let mut obj = Map::with_capacity(result.columns.len());
-            for (col, val) in result.columns.iter().zip(row.0.iter()) {
+            for (col, val) in result.columns.iter().zip(row.values().iter()) {
                 obj.insert(col.as_str().to_owned(), value_to_json(val));
             }
             JsonValue::Object(obj)
@@ -62,17 +62,17 @@ mod tests {
                 ColumnName::new("state").unwrap(),
             ],
             rows: vec![
-                Row(vec![
+                Row::new(vec![
                     Value::Integer(1),
                     Value::String("Fix bug".into()),
                     Value::String("open".into()),
                 ]),
-                Row(vec![
+                Row::new(vec![
                     Value::Integer(2),
                     Value::String("Add feature".into()),
                     Value::String("closed".into()),
                 ]),
-                Row(vec![
+                Row::new(vec![
                     Value::Integer(3),
                     Value::String("Refactor module".into()),
                     Value::String("open".into()),

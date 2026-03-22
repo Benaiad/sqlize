@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::catalog::types::{
-    Column, ColumnName, ColumnOrigin, ResultSet, Row, Value, sanitize_name,
+    Column, ColumnName, ColumnSource, ResultSet, Row, Value, sanitize_name,
 };
 use crate::error::Result;
 
@@ -26,7 +26,7 @@ pub fn json_to_result_set(
     // controls, not data columns. Keep path params, response fields, and dual-origin.
     let data_columns: Vec<&Column> = columns
         .iter()
-        .filter(|c| !matches!(c.origin, ColumnOrigin::QueryParam))
+        .filter(|c| !matches!(c.source, ColumnSource::QueryParam))
         .collect();
 
     let col_names: Vec<ColumnName> = data_columns.iter().map(|c| c.name.clone()).collect();
@@ -47,7 +47,7 @@ fn extract_row(
     param_values: &HashMap<ColumnName, String>,
 ) -> Row {
     let Some(map) = obj.as_object() else {
-        return Row(vec![Value::Null; columns.len()]);
+        return Row::new(vec![Value::Null; columns.len()]);
     };
 
     // Build a flat lookup: "sanitized_key" → json value (one level of flattening)
@@ -81,7 +81,7 @@ fn extract_row(
         })
         .collect();
 
-    Row(values)
+    Row::new(values)
 }
 
 fn json_value_to_value(v: &serde_json::Value) -> Value {
@@ -105,7 +105,7 @@ fn json_value_to_value(v: &serde_json::Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::catalog::types::ColumnOrigin;
+    use crate::catalog::types::{ColumnSource, PushdownKind};
     use crate::catalog::types::ColumnType;
 
     fn test_columns() -> Vec<Column> {
@@ -115,32 +115,36 @@ mod tests {
                 col_type: ColumnType::String,
                 nullable: false,
                 description: None,
-                origin: ColumnOrigin::PathParam,
-                api_name: None,
+                source: ColumnSource::PathParam,
+                    pushdown: PushdownKind::Required,
+                api_name: "owner".to_owned(),
             },
             Column {
                 name: ColumnName::new("id").unwrap(),
                 col_type: ColumnType::Integer,
                 nullable: false,
                 description: None,
-                origin: ColumnOrigin::ResponseField,
-                api_name: None,
+                source: ColumnSource::ResponseField,
+                    pushdown: PushdownKind::LocalOnly,
+                api_name: "id".to_owned(),
             },
             Column {
                 name: ColumnName::new("title").unwrap(),
                 col_type: ColumnType::String,
                 nullable: false,
                 description: None,
-                origin: ColumnOrigin::ResponseField,
-                api_name: None,
+                source: ColumnSource::ResponseField,
+                    pushdown: PushdownKind::LocalOnly,
+                api_name: "title".to_owned(),
             },
             Column {
                 name: ColumnName::new("user_login").unwrap(),
                 col_type: ColumnType::String,
                 nullable: true,
                 description: None,
-                origin: ColumnOrigin::ResponseField,
-                api_name: None,
+                source: ColumnSource::ResponseField,
+                    pushdown: PushdownKind::LocalOnly,
+                api_name: "user_login".to_owned(),
             },
         ]
     }
@@ -161,11 +165,11 @@ mod tests {
         assert_eq!(result.columns[0].as_str(), "owner");
         assert_eq!(result.rows.len(), 2);
         // owner injected from params
-        assert_eq!(result.rows[0].0[0], Value::String("rust-lang".into()));
+        assert_eq!(result.rows[0].values()[0], Value::String("rust-lang".into()));
         // response fields extracted
-        assert_eq!(result.rows[0].0[1], Value::Integer(1));
-        assert_eq!(result.rows[0].0[2], Value::String("bug".into()));
-        assert_eq!(result.rows[0].0[3], Value::String("alice".into()));
+        assert_eq!(result.rows[0].values()[1], Value::Integer(1));
+        assert_eq!(result.rows[0].values()[2], Value::String("bug".into()));
+        assert_eq!(result.rows[0].values()[3], Value::String("alice".into()));
     }
 
     #[test]
@@ -181,8 +185,8 @@ mod tests {
         let json = serde_json::json!([{"id": 1}]);
         let cols = test_columns();
         let result = json_to_result_set(&json, &cols, &HashMap::new()).unwrap();
-        assert_eq!(result.rows[0].0[2], Value::Null); // title missing
-        assert_eq!(result.rows[0].0[3], Value::Null); // user_login missing
+        assert_eq!(result.rows[0].values()[2], Value::Null); // title missing
+        assert_eq!(result.rows[0].values()[3], Value::Null); // user_login missing
     }
 
     #[test]
@@ -224,16 +228,18 @@ mod tests {
                 col_type: ColumnType::String,
                 nullable: false,
                 description: None,
-                origin: ColumnOrigin::QueryParamAndResponseField,
-                api_name: None,
+                source: ColumnSource::QueryParamAndResponse,
+                pushdown: PushdownKind::Optional,
+                api_name: "state".to_owned(),
             },
             Column {
                 name: ColumnName::new("title").unwrap(),
                 col_type: ColumnType::String,
                 nullable: false,
                 description: None,
-                origin: ColumnOrigin::ResponseField,
-                api_name: None,
+                source: ColumnSource::ResponseField,
+                    pushdown: PushdownKind::LocalOnly,
+                api_name: "title".to_owned(),
             },
         ];
 
@@ -248,9 +254,9 @@ mod tests {
         let result = json_to_result_set(&json, &cols, &params).unwrap();
 
         // First row: state from JSON is "open" (matches filter)
-        assert_eq!(result.rows[0].0[0], Value::String("open".into()));
+        assert_eq!(result.rows[0].values()[0], Value::String("open".into()));
         // Second row: state from JSON is "closed" (differs from filter — response wins)
-        assert_eq!(result.rows[1].0[0], Value::String("closed".into()));
+        assert_eq!(result.rows[1].values()[0], Value::String("closed".into()));
     }
 
     #[test]
@@ -262,8 +268,9 @@ mod tests {
                 col_type: ColumnType::String,
                 nullable: false,
                 description: None,
-                origin: ColumnOrigin::PathParam,
-                api_name: None,
+                source: ColumnSource::PathParam,
+                    pushdown: PushdownKind::Required,
+                api_name: "owner".to_owned(),
             },
         ];
 
@@ -272,6 +279,6 @@ mod tests {
         params.insert(ColumnName::new("owner").unwrap(), "rust-lang".to_owned());
 
         let result = json_to_result_set(&json, &cols, &params).unwrap();
-        assert_eq!(result.rows[0].0[0], Value::String("rust-lang".into()));
+        assert_eq!(result.rows[0].values()[0], Value::String("rust-lang".into()));
     }
 }

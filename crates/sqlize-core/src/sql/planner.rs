@@ -6,7 +6,7 @@ use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
 use crate::catalog::Catalog;
-use crate::catalog::types::{ColumnName, ColumnOrigin, TableName, VirtualTable};
+use crate::catalog::types::{ColumnName, PushdownKind, TableName, VirtualTable};
 use crate::error::{Error, Result};
 
 use crate::catalog::types::Value;
@@ -243,22 +243,16 @@ fn classify_single_condition(
         .find(|c| c.name == col_name);
 
     match column {
-        Some(col) => match &col.origin {
-            ColumnOrigin::PathParam if filter_op == FilterOp::Eq => {
+        Some(col) => match col.pushdown {
+            PushdownKind::Required if filter_op == FilterOp::Eq => {
                 let value_str = filter_value_to_string(&filter_value);
                 Ok(ConditionClass::PathParam {
                     name: col.name.clone(),
                     value: value_str,
                 })
             }
-            ColumnOrigin::QueryParam
-            | ColumnOrigin::QueryParamAndResponseField
-                if filter_op == FilterOp::Eq =>
-            {
-                let param_name = col.api_name
-                    .as_deref()
-                    .unwrap_or(col.name.as_str())
-                    .to_owned();
+            PushdownKind::Optional if filter_op == FilterOp::Eq => {
+                let param_name = col.api_name.clone();
                 let value_str = filter_value_to_string(&filter_value);
                 Ok(ConditionClass::QueryParam {
                     api_name: param_name,
@@ -429,14 +423,10 @@ fn plan_projections(
 }
 
 fn validate_column(table: &VirtualTable, col: &ColumnName) -> Result<()> {
-    if table.columns.iter().any(|c| c.name == *col) {
-        Ok(())
-    } else {
-        Err(Error::ColumnNotFound {
-            table: table.name.clone(),
-            column: col.clone(),
-        })
-    }
+    table.column(col).map(|_| ()).ok_or_else(|| Error::ColumnNotFound {
+        table: table.name.clone(),
+        column: col.clone(),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -570,56 +560,63 @@ mod tests {
                     col_type: ColumnType::String,
                     nullable: false,
                     description: None,
-                    origin: ColumnOrigin::PathParam,
-                    api_name: None,
+                    source: ColumnSource::PathParam,
+                    pushdown: PushdownKind::Required,
+                    api_name: "owner".to_owned(),
                 },
                 Column {
                     name: ColumnName::new("repo").unwrap(),
                     col_type: ColumnType::String,
                     nullable: false,
                     description: None,
-                    origin: ColumnOrigin::PathParam,
-                    api_name: None,
+                    source: ColumnSource::PathParam,
+                    pushdown: PushdownKind::Required,
+                    api_name: "repo".to_owned(),
                 },
                 Column {
                     name: ColumnName::new("state").unwrap(),
                     col_type: ColumnType::String,
                     nullable: false,
                     description: None,
-                    origin: ColumnOrigin::QueryParam,
-                    api_name: None,
+                    source: ColumnSource::QueryParam,
+                    pushdown: PushdownKind::Optional,
+                    api_name: "state".to_owned(),
                 },
                 Column {
                     name: ColumnName::new("id").unwrap(),
                     col_type: ColumnType::Integer,
                     nullable: false,
                     description: None,
-                    origin: ColumnOrigin::ResponseField,
-                    api_name: None,
+                    source: ColumnSource::ResponseField,
+                    pushdown: PushdownKind::LocalOnly,
+                    api_name: "id".to_owned(),
                 },
                 Column {
                     name: ColumnName::new("number").unwrap(),
                     col_type: ColumnType::Integer,
                     nullable: false,
                     description: None,
-                    origin: ColumnOrigin::ResponseField,
-                    api_name: None,
+                    source: ColumnSource::ResponseField,
+                    pushdown: PushdownKind::LocalOnly,
+                    api_name: "number".to_owned(),
                 },
                 Column {
                     name: ColumnName::new("title").unwrap(),
                     col_type: ColumnType::String,
                     nullable: false,
                     description: None,
-                    origin: ColumnOrigin::ResponseField,
-                    api_name: None,
+                    source: ColumnSource::ResponseField,
+                    pushdown: PushdownKind::LocalOnly,
+                    api_name: "title".to_owned(),
                 },
                 Column {
                     name: ColumnName::new("created_at").unwrap(),
                     col_type: ColumnType::Timestamp,
                     nullable: false,
                     description: None,
-                    origin: ColumnOrigin::ResponseField,
-                    api_name: None,
+                    source: ColumnSource::ResponseField,
+                    pushdown: PushdownKind::LocalOnly,
+                    api_name: "created_at".to_owned(),
                 },
             ],
             endpoint: ApiEndpoint {
@@ -642,9 +639,7 @@ mod tests {
             &catalog,
         ).unwrap();
 
-        let PlanSource::ApiCall(call) = &plan.source else {
-            panic!("expected ApiCall");
-        };
+        let PlanSource::ApiCall(call) = &plan.source;
 
         let owner = ColumnName::new("owner").unwrap();
         let repo = ColumnName::new("repo").unwrap();
