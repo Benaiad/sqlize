@@ -6,7 +6,7 @@ use std::collections::HashMap;
 pub use reqwest::Client;
 use reqwest::header::{ACCEPT, AUTHORIZATION, USER_AGENT};
 
-use crate::catalog::types::{Column, ColumnName, ResultSet, Row};
+use crate::catalog::types::{ApiParamName, Column, ColumnName, ResultSet, Row};
 use crate::error::{Error, Result};
 use crate::sql::plan::{ApiCall, PlanSource, QueryPlan};
 
@@ -109,8 +109,8 @@ fn build_param_values(
 ) -> HashMap<ColumnName, String> {
     let mut values: HashMap<ColumnName, String> = call.path_params.clone();
     for col in columns.iter().filter(|c| c.role.is_pushable() && !c.role.is_required()) {
-        let param_key = col.api_param_key();
-        if let Some(val) = call.query_params.get(param_key) {
+        let param_key = ApiParamName::new(col.api_param_key());
+        if let Some(val) = call.query_params.get(&param_key) {
             values.insert(col.name.clone(), val.clone());
         }
     }

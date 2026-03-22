@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::catalog::types::{ApiEndpoint, Column, ColumnName, Scalar, TableName};
+use crate::catalog::types::{ApiEndpoint, ApiParamName, Column, ColumnName, Scalar, TableName};
 
 /// The output of the query planner: a recipe for executing a SQL query.
 #[derive(Debug)]
@@ -26,7 +26,7 @@ pub struct ApiCall {
     /// Path parameter values extracted from WHERE (e.g., owner = 'anthropics').
     pub(crate) path_params: HashMap<ColumnName, String>,
     /// Query parameter values to push down to the API (e.g., state = 'open').
-    pub(crate) query_params: HashMap<String, String>,
+    pub(crate) query_params: HashMap<ApiParamName, String>,
 }
 
 /// Operations applied locally after fetching rows from the API.

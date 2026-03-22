@@ -6,7 +6,7 @@ use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
 use crate::catalog::Catalog;
-use crate::catalog::types::{ColumnName, TableName, VirtualTable};
+use crate::catalog::types::{ApiParamName, ColumnName, TableName, VirtualTable};
 use crate::error::{Error, Result};
 
 use crate::catalog::types::Scalar;
@@ -141,7 +141,7 @@ struct ClassifiedConditions {
     /// Path parameter values (must all be present for the API call).
     path_params: std::collections::HashMap<ColumnName, String>,
     /// Query parameters to push down to the API.
-    query_params: std::collections::HashMap<String, String>,
+    query_params: std::collections::HashMap<ApiParamName, String>,
     /// Conditions that must be evaluated locally after fetching.
     local_filters: Vec<LocalFilter>,
 }
@@ -201,7 +201,7 @@ fn classify_conditions(
 
 enum ConditionClass {
     PathParam { name: ColumnName, value: String },
-    QueryParam { api_name: String, value: String },
+    QueryParam { api_name: ApiParamName, value: String },
     LocalFilter(LocalFilter),
 }
 
@@ -253,7 +253,7 @@ fn classify_single_condition(
         Some(col) if col.role.is_pushable() && !col.role.is_required() && filter_op == FilterOp::Eq => {
             let value_str = filter_value_to_string(&filter_value);
             Ok(ConditionClass::QueryParam {
-                api_name: col.api_param_key().to_owned(),
+                api_name: ApiParamName::new(col.api_param_key()),
                 value: value_str,
             })
         }
@@ -635,7 +635,7 @@ mod tests {
         let repo = ColumnName::new("repo").unwrap();
         assert_eq!(call.path_params.get(&owner).unwrap(), "anthropics");
         assert_eq!(call.path_params.get(&repo).unwrap(), "claude-code");
-        assert_eq!(call.query_params.get("state").unwrap(), "open");
+        assert_eq!(call.query_params.get(&ApiParamName::new("state")).unwrap(), "open");
         assert_eq!(plan.post.limit, Some(10));
         assert_eq!(plan.post.projections.len(), 2);
     }
