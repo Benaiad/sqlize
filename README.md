@@ -110,21 +110,16 @@ claude mcp add \
 ## How queries map to API calls
 
 ```sql
-SELECT number, title FROM issues
-WHERE owner = 'openclaw' AND repo = 'openclaw' AND state = 'open'
-ORDER BY created_at DESC
-LIMIT 10
+sqlize> EXPLAIN SELECT number, title FROM issues
+     >  WHERE owner = 'openclaw' AND repo = 'openclaw' AND state = 'open'
+     >  ORDER BY created_at DESC
+     >  LIMIT 10;
+GET https://api.github.com/repos/openclaw/openclaw/issues?state=open
+Order by: created_at DESC
+Limit: 10
 ```
 
-The planner classifies each `WHERE` condition:
-
-| Condition | Classification | Effect |
-|-----------|---------------|--------|
-| `owner = 'openclaw'` | Path parameter | Substituted into URL: `/repos/openclaw/{repo}/issues` |
-| `repo = 'openclaw'` | Path parameter | Substituted into URL: `/repos/openclaw/openclaw/issues` |
-| `state = 'open'` | Query parameter | Pushed to API: `?state=open` |
-| `ORDER BY created_at DESC` | Post-processing | Applied locally after fetch |
-| `LIMIT 10` | Post-processing | Applied locally after fetch |
+`WHERE` conditions on path parameters (`owner`, `repo`) are substituted into the URL. Query parameters (`state`) are pushed to the API as `?key=value`. Everything else (`ORDER BY`, `LIMIT`) is applied locally after the fetch.
 
 Path parameters are required — omitting them fails at query planning, before any HTTP call is made.
 
