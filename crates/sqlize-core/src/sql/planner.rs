@@ -332,10 +332,17 @@ fn extract_value(expr: &Expr) -> Result<FilterValue> {
             }
             SqlValue::Boolean(b) => Ok(FilterValue::Boolean(*b)),
             SqlValue::Null => Ok(FilterValue::Null),
-            _ => Err(Error::UnsupportedSql("unsupported value type in WHERE".to_owned().to_owned())),
+            _ => Err(Error::UnsupportedSql("unsupported value type in WHERE".to_owned())),
         },
+        Expr::Identifier(ident) => Err(Error::UnsupportedSql(
+            format!(
+                "unquoted value '{}' — did you mean '{}'?",
+                ident.value,
+                ident.value,
+            ),
+        )),
         _ => Err(Error::UnsupportedSql(
-            "right side of WHERE condition must be a literal value".to_owned(),
+            "right side of WHERE condition must be a literal value (use single quotes for strings)".to_owned(),
         )),
     }
 }
