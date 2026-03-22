@@ -49,11 +49,16 @@ async fn main() {
         match execute(&plan, &auth, &client).await {
             Ok(result) => {
                 let json = result_set_to_json(&result);
-                let toon = result_set_to_toon(&result).unwrap_or_else(|e| format!("TOON error: {e}"));
+                let toon =
+                    result_set_to_toon(&result).unwrap_or_else(|e| format!("TOON error: {e}"));
 
                 println!("--- JSON ({} bytes) ---", json.len());
                 println!("{json}");
-                println!("\n--- TOON ({} bytes, {:.0}% smaller) ---", toon.len(), (1.0 - toon.len() as f64 / json.len() as f64) * 100.0);
+                println!(
+                    "\n--- TOON ({} bytes, {:.0}% smaller) ---",
+                    toon.len(),
+                    (1.0 - toon.len() as f64 / json.len() as f64) * 100.0
+                );
                 println!("{toon}");
             }
             Err(e) => {

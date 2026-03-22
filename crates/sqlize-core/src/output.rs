@@ -11,8 +11,7 @@ use crate::error::{Error, Result};
 /// which is exactly what query results are.
 pub fn result_set_to_toon(result: &ResultSet) -> Result<String> {
     let json = result_set_to_json_value(result);
-    encode_array(json, &EncodeOptions::new())
-        .map_err(|e| Error::ToonEncode(e.to_string()))
+    encode_array(json, &EncodeOptions::new()).map_err(|e| Error::ToonEncode(e.to_string()))
 }
 
 /// Format a `ResultSet` as JSON (array of objects).
@@ -102,7 +101,10 @@ mod tests {
         let toon = result_set_to_toon(&result).unwrap();
 
         // TOON tabular format should contain the header row and pipe-separated values
-        assert!(toon.contains("number"), "should contain column name 'number'");
+        assert!(
+            toon.contains("number"),
+            "should contain column name 'number'"
+        );
         assert!(toon.contains("Fix bug"), "should contain row value");
     }
 

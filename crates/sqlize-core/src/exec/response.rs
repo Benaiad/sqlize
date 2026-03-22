@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 
-use crate::catalog::types::{
-    Column, ColumnName, ResultSet, Row, Scalar, sanitize_name,
-};
+use crate::catalog::types::{Column, ColumnName, ResultSet, Row, Scalar, sanitize_name};
 use crate::error::Result;
 
 /// Convert a JSON API response into a `ResultSet` using the catalog schema.
@@ -19,7 +17,12 @@ pub fn json_to_result_set(
     let items = match json {
         serde_json::Value::Array(arr) => arr.as_slice(),
         serde_json::Value::Object(_) => std::slice::from_ref(json),
-        _ => return Ok(ResultSet { columns: Vec::new(), rows: Vec::new() }),
+        _ => {
+            return Ok(ResultSet {
+                columns: Vec::new(),
+                rows: Vec::new(),
+            });
+        }
     };
 
     // Exclude pure query params (sort, type, direction, etc.) — they're filter
@@ -36,7 +39,10 @@ pub fn json_to_result_set(
         .map(|item| extract_row(item, &data_columns, param_values))
         .collect();
 
-    Ok(ResultSet { columns: col_names, rows })
+    Ok(ResultSet {
+        columns: col_names,
+        rows,
+    })
 }
 
 /// Extract a row of values from a JSON object, matching the catalog's column order.
@@ -160,7 +166,10 @@ mod tests {
         assert_eq!(result.columns[0].as_str(), "owner");
         assert_eq!(result.rows.len(), 2);
         // owner injected from params
-        assert_eq!(result.rows[0].values()[0], Scalar::String("rust-lang".into()));
+        assert_eq!(
+            result.rows[0].values()[0],
+            Scalar::String("rust-lang".into())
+        );
         // response fields extracted
         assert_eq!(result.rows[0].values()[1], Scalar::Integer(1));
         assert_eq!(result.rows[0].values()[2], Scalar::String("bug".into()));
@@ -255,22 +264,23 @@ mod tests {
     #[test]
     fn param_only_column_uses_param_value() {
         // `owner` is a path param not present in the response — should use param value.
-        let cols = vec![
-            Column {
-                name: ColumnName::new("owner").unwrap(),
-                col_type: ColumnType::String,
-                nullable: false,
-                description: None,
-                role: ColumnRole::PathParam,
-                api_name: Some(crate::catalog::types::ApiParamName::new("owner")),
-            },
-        ];
+        let cols = vec![Column {
+            name: ColumnName::new("owner").unwrap(),
+            col_type: ColumnType::String,
+            nullable: false,
+            description: None,
+            role: ColumnRole::PathParam,
+            api_name: Some(crate::catalog::types::ApiParamName::new("owner")),
+        }];
 
         let json = serde_json::json!([{"id": 1}]);
         let mut params = HashMap::new();
         params.insert(ColumnName::new("owner").unwrap(), "rust-lang".to_owned());
 
         let result = json_to_result_set(&json, &cols, &params).unwrap();
-        assert_eq!(result.rows[0].values()[0], Scalar::String("rust-lang".into()));
+        assert_eq!(
+            result.rows[0].values()[0],
+            Scalar::String("rust-lang".into())
+        );
     }
 }

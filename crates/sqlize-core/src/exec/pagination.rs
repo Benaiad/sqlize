@@ -1,10 +1,9 @@
-/// Pagination detection from HTTP response headers and body.
-///
-/// Detects the next page URL by trying strategies in order:
-/// 1. Link header with `rel="next"` (RFC 8288 — GitHub, GitLab, most REST APIs)
-/// 2. Response body URL field: `next`, `next_url`, `next_page` (Django, others)
-/// 3. Cursor-based: `has_more` + last item `id` → `?starting_after=id` (Stripe)
-/// 4. Offset-based: `total`/`count` field with page tracking (generic)
+//! Pagination detection from HTTP response headers and body.
+//!
+//! Detects the next page URL by trying strategies in order:
+//! 1. Link header with `rel="next"` (RFC 8288 — GitHub, GitLab, most REST APIs)
+//! 2. Response body URL field: `next`, `next_url`, `next_page` (Django, others)
+//! 3. Cursor-based: `has_more` + last item `id` → `?starting_after=id` (Stripe)
 
 /// Everything the pagination detector needs to decide the next page.
 pub struct PageContext<'a> {
@@ -66,7 +65,8 @@ fn cursor_based(ctx: &PageContext<'_>) -> Option<String> {
     let obj = ctx.body.as_object()?;
 
     // Check for has_more / hasMore / has_next_page: true
-    let has_more = obj.get("has_more")
+    let has_more = obj
+        .get("has_more")
         .or_else(|| obj.get("hasMore"))
         .or_else(|| obj.get("has_next_page"))?
         .as_bool()?;
@@ -78,21 +78,34 @@ fn cursor_based(ctx: &PageContext<'_>) -> Option<String> {
     // Determine cursor value. Priority:
     // 1. Explicit cursor field in the response body (next_cursor, cursor, end_cursor)
     // 2. Last item's id field (Stripe and most REST APIs)
-    let cursor = extract_explicit_cursor(obj)
-        .or_else(|| extract_last_item_id(ctx.data))?;
+    let cursor = extract_explicit_cursor(obj).or_else(|| extract_last_item_id(ctx.data))?;
 
     // Determine the cursor parameter name from the response shape
     let cursor_param = detect_cursor_param(obj);
 
     // Append cursor to URL
-    let separator = if ctx.current_url.contains('?') { "&" } else { "?" };
-    Some(format!("{}{separator}{cursor_param}={cursor}", ctx.current_url))
+    let separator = if ctx.current_url.contains('?') {
+        "&"
+    } else {
+        "?"
+    };
+    Some(format!(
+        "{}{separator}{cursor_param}={cursor}",
+        ctx.current_url
+    ))
 }
 
 /// Look for an explicit cursor/token in the response body.
 fn extract_explicit_cursor(obj: &serde_json::Map<String, serde_json::Value>) -> Option<String> {
-    for key in ["next_cursor", "cursor", "end_cursor", "ending_before",
-                "next_page_token", "pageToken", "continuation_token"] {
+    for key in [
+        "next_cursor",
+        "cursor",
+        "end_cursor",
+        "ending_before",
+        "next_page_token",
+        "pageToken",
+        "continuation_token",
+    ] {
         if let Some(val) = obj.get(key) {
             match val {
                 serde_json::Value::String(s) if !s.is_empty() => return Some(s.clone()),

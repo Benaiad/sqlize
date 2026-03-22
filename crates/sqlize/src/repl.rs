@@ -1,14 +1,14 @@
 use std::borrow::Cow;
 use std::sync::Arc;
 
+use crossterm::cursor::SetCursorStyle;
 use nu_ansi_term::{Color, Style};
 use reedline::{
     ColumnarMenu, Completer, CursorConfig, Emacs, FileBackedHistory, Highlighter, KeyCode,
     KeyModifiers, MenuBuilder, Prompt, PromptEditMode, PromptHistorySearch, Reedline,
-    ReedlineEvent, ReedlineMenu, Signal, Span, StyledText, Suggestion, ValidationResult,
-    Validator, default_emacs_keybindings,
+    ReedlineEvent, ReedlineMenu, Signal, Span, StyledText, Suggestion, ValidationResult, Validator,
+    default_emacs_keybindings,
 };
-use crossterm::cursor::SetCursorStyle;
 use tabled::builder::Builder;
 use tabled::settings::{self, Width};
 
@@ -102,10 +102,9 @@ impl Validator for SqlValidator {
 // ---------------------------------------------------------------------------
 
 const SQL_KEYWORDS: &[&str] = &[
-    "SELECT", "FROM", "WHERE", "AND", "OR", "NOT", "IN", "IS", "NULL",
-    "ORDER", "BY", "ASC", "DESC", "LIMIT", "OFFSET", "GROUP", "HAVING",
-    "JOIN", "ON", "AS", "LIKE", "BETWEEN", "EXISTS", "DISTINCT", "COUNT",
-    "SUM", "AVG", "MIN", "MAX", "SHOW", "TABLES", "DESCRIBE", "EXPLAIN",
+    "SELECT", "FROM", "WHERE", "AND", "OR", "NOT", "IN", "IS", "NULL", "ORDER", "BY", "ASC",
+    "DESC", "LIMIT", "OFFSET", "GROUP", "HAVING", "JOIN", "ON", "AS", "LIKE", "BETWEEN", "EXISTS",
+    "DISTINCT", "COUNT", "SUM", "AVG", "MIN", "MAX", "SHOW", "TABLES", "DESCRIBE", "EXPLAIN",
     "TRUE", "FALSE",
 ];
 
@@ -126,7 +125,13 @@ impl Highlighter for SqlHighlighter {
             if ch == '\'' {
                 // String literal
                 if !token.is_empty() {
-                    push_token(&mut styled, &token, keyword_style, number_style, default_style);
+                    push_token(
+                        &mut styled,
+                        &token,
+                        keyword_style,
+                        number_style,
+                        default_style,
+                    );
                     token.clear();
                 }
                 let mut s = String::new();
@@ -140,7 +145,13 @@ impl Highlighter for SqlHighlighter {
                 styled.push((string_style, s));
             } else if ch.is_ascii_whitespace() || ch == ',' || ch == '(' || ch == ')' || ch == ';' {
                 if !token.is_empty() {
-                    push_token(&mut styled, &token, keyword_style, number_style, default_style);
+                    push_token(
+                        &mut styled,
+                        &token,
+                        keyword_style,
+                        number_style,
+                        default_style,
+                    );
                     token.clear();
                 }
                 styled.push((default_style, chars.next().unwrap().to_string()));
@@ -150,7 +161,13 @@ impl Highlighter for SqlHighlighter {
         }
 
         if !token.is_empty() {
-            push_token(&mut styled, &token, keyword_style, number_style, default_style);
+            push_token(
+                &mut styled,
+                &token,
+                keyword_style,
+                number_style,
+                default_style,
+            );
         }
 
         fn push_token(
@@ -237,7 +254,11 @@ impl Completer for SqlCompleter {
             })
             .map(|w| {
                 // Match the case of what the user is typing
-                let value = if partial.chars().next().is_some_and(|c| c.is_ascii_lowercase()) {
+                let value = if partial
+                    .chars()
+                    .next()
+                    .is_some_and(|c| c.is_ascii_lowercase())
+                {
                     w.to_ascii_lowercase()
                 } else {
                     w.clone()
@@ -268,13 +289,11 @@ pub async fn run(catalog: Arc<Catalog>, auth: AuthConfig, client: Client, format
     if let Some(parent) = history_file.parent() {
         std::fs::create_dir_all(parent).ok();
     }
-    let history = FileBackedHistory::with_file(1000, history_file)
-        .expect("failed to create history file");
+    let history =
+        FileBackedHistory::with_file(1000, history_file).expect("failed to create history file");
 
     let completer = Box::new(SqlCompleter::from_catalog(&catalog));
-    let completion_menu = Box::new(
-        ColumnarMenu::default().with_name("completion_menu"),
-    );
+    let completion_menu = Box::new(ColumnarMenu::default().with_name("completion_menu"));
 
     let mut keybindings = default_emacs_keybindings();
     keybindings.add_binding(
@@ -348,7 +367,13 @@ fn parse_command(input: &str) -> ReplCommand<'_> {
     }
 }
 
-async fn dispatch(catalog: &Catalog, auth: &AuthConfig, client: &Client, input: &str, format: OutputFormat) {
+async fn dispatch(
+    catalog: &Catalog,
+    auth: &AuthConfig,
+    client: &Client,
+    input: &str,
+    format: OutputFormat,
+) {
     match parse_command(input) {
         ReplCommand::ShowTables => handle_show_tables(catalog),
         ReplCommand::Describe(name) => handle_describe(catalog, name),
@@ -405,7 +430,13 @@ fn handle_explain(catalog: &Catalog, sql: &str) {
     }
 }
 
-async fn handle_query(catalog: &Catalog, auth: &AuthConfig, client: &Client, sql: &str, format: OutputFormat) {
+async fn handle_query(
+    catalog: &Catalog,
+    auth: &AuthConfig,
+    client: &Client,
+    sql: &str,
+    format: OutputFormat,
+) {
     let plan = match plan_query(sql, catalog) {
         Ok(p) => p,
         Err(e) => {
@@ -473,7 +504,12 @@ fn print_expanded(result: &ResultSet) {
         println!("{}{}", label, "-".repeat(separator_len));
 
         for (col, val) in result.columns.iter().zip(row.values().iter()) {
-            println!("{:>width$} | {}", col.as_str(), format_value(val), width = max_col_width);
+            println!(
+                "{:>width$} | {}",
+                col.as_str(),
+                format_value(val),
+                width = max_col_width
+            );
         }
     }
 }

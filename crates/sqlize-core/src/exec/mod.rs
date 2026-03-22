@@ -21,20 +21,14 @@ pub struct AuthConfig {
 }
 
 /// Execute a query plan against live APIs.
-pub async fn execute(
-    plan: &QueryPlan,
-    auth: &AuthConfig,
-    client: &Client,
-) -> Result<ResultSet> {
+pub async fn execute(plan: &QueryPlan, auth: &AuthConfig, client: &Client) -> Result<ResultSet> {
     let fetch_limit = plan.post.limit.map(|l| {
         let offset = plan.post.offset.unwrap_or(0);
         l + offset
     });
 
     let mut result = match &plan.source {
-        PlanSource::ApiCall(call) => {
-            execute_api_call(call, client, auth, fetch_limit).await?
-        }
+        PlanSource::ApiCall(call) => execute_api_call(call, client, auth, fetch_limit).await?,
     };
 
     postprocess::apply(&plan.post, &mut result);
@@ -96,14 +90,18 @@ async fn execute_api_call(
         is_first_page = false;
     }
 
-    Ok(ResultSet { columns: all_columns, rows: all_rows })
+    Ok(ResultSet {
+        columns: all_columns,
+        rows: all_rows,
+    })
 }
 
 fn resolve_url(call: &ApiCall) -> Result<String> {
     call.endpoint
         .url(|placeholder| {
             // Find the column whose API name matches this URL placeholder
-            call.columns.iter()
+            call.columns
+                .iter()
                 .find(|c| c.api_param_key() == placeholder)
                 .and_then(|c| {
                     let key = ApiParamName::new(c.api_param_key());
@@ -151,7 +149,9 @@ async fn fetch_page(
 
     if is_first_page {
         // Extract query params (non-path pushable params) and stringify for HTTP
-        let query_params: Vec<(String, String)> = call.columns.iter()
+        let query_params: Vec<(String, String)> = call
+            .columns
+            .iter()
             .filter(|c| c.role.is_pushable() && !c.role.is_required())
             .filter_map(|c| {
                 let key = ApiParamName::new(c.api_param_key());
@@ -159,7 +159,8 @@ async fn fetch_page(
                 Some((key.as_str().to_owned(), val.to_string()))
             })
             .collect();
-        let query_refs: Vec<(&str, &str)> = query_params.iter()
+        let query_refs: Vec<(&str, &str)> = query_params
+            .iter()
             .map(|(k, v)| (k.as_str(), v.as_str()))
             .collect();
         request = request.query(&query_refs);
@@ -208,4 +209,3 @@ fn unwrap_response<'a>(
         None => body,
     }
 }
-

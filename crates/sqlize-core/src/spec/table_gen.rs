@@ -49,7 +49,9 @@ pub fn tables_from_spec(
     let mut name_counts: std::collections::HashMap<String, usize> =
         std::collections::HashMap::new();
     for (_, table) in &candidates {
-        *name_counts.entry(table.name.as_str().to_owned()).or_default() += 1;
+        *name_counts
+            .entry(table.name.as_str().to_owned())
+            .or_default() += 1;
     }
 
     let mut tables = Vec::new();
@@ -100,13 +102,16 @@ fn try_build_table(
     base_url: &str,
 ) -> Result<Option<VirtualTable>> {
     // Find the success response schema and its content type
-    let Some((item_schema, content_type, data_path)) = extract_list_item_schema(spec, operation) else {
+    let Some((item_schema, content_type, data_path)) = extract_list_item_schema(spec, operation)
+    else {
         return Ok(None);
     };
 
     let table_name = derive_table_name(path_str)?;
-    let path_template = PathTemplate::new(path_str)
-        .map_err(|_| Error::InvalidPath { path: path_str.to_owned(), reason: "invalid path template" })?;
+    let path_template = PathTemplate::new(path_str).map_err(|_| Error::InvalidPath {
+        path: path_str.to_owned(),
+        reason: "invalid path template",
+    })?;
 
     // Build columns from three sources:
     // 1. Path parameters → ColumnRole::PathParam
@@ -183,10 +188,7 @@ fn extract_list_item_schema<'a>(
     spec: &'a OpenAPI,
     operation: &'a Operation,
 ) -> Option<(&'a openapiv3::Schema, String, Option<String>)> {
-    let response_ref = operation
-        .responses
-        .responses
-        .get(&StatusCode::Code(200))?;
+    let response_ref = operation.responses.responses.get(&StatusCode::Code(200))?;
 
     let response = match response_ref {
         ReferenceOr::Item(r) => r,
@@ -224,11 +226,7 @@ fn extract_list_item_schema<'a>(
             if let SchemaKind::Type(OaType::Array(arr)) = &prop_schema.schema_kind {
                 let items_ref = arr.items.as_ref()?;
                 let item_schema = resolve_boxed_schema(spec, items_ref)?;
-                return Some((
-                    item_schema,
-                    content_type.clone(),
-                    Some(field_name.clone()),
-                ));
+                return Some((item_schema, content_type.clone(), Some(field_name.clone())));
             }
         }
     }
@@ -269,8 +267,12 @@ fn derive_qualified_table_name(path: &str) -> Result<crate::catalog::types::Tabl
     let segments = static_segments(path);
 
     if segments.len() >= 2 {
-        let parent = segments[segments.len() - 2].replace('-', "_").to_ascii_lowercase();
-        let child = segments[segments.len() - 1].replace('-', "_").to_ascii_lowercase();
+        let parent = segments[segments.len() - 2]
+            .replace('-', "_")
+            .to_ascii_lowercase();
+        let child = segments[segments.len() - 1]
+            .replace('-', "_")
+            .to_ascii_lowercase();
         let qualified = format!("{parent}_{child}");
         crate::catalog::types::TableName::new(&qualified)
             .map_err(|_| Error::TableNameDerivation(path.to_owned()))
@@ -293,8 +295,7 @@ fn merge_parameters<'a>(
     path_item: &'a PathItem,
     operation: &'a Operation,
 ) -> Vec<&'a Parameter> {
-    let mut by_name: std::collections::HashMap<&str, &Parameter> =
-        std::collections::HashMap::new();
+    let mut by_name: std::collections::HashMap<&str, &Parameter> = std::collections::HashMap::new();
 
     for param_ref in &path_item.parameters {
         if let Some(param) = resolve_parameter(spec, param_ref) {
@@ -348,17 +349,10 @@ fn resolve_parameter<'a>(
 }
 
 /// Convert an OpenAPI parameter to a Column.
-fn param_to_column(
-    spec: &OpenAPI,
-    param: &Parameter,
-) -> Result<Option<Column>> {
+fn param_to_column(spec: &OpenAPI, param: &Parameter) -> Result<Option<Column>> {
     let (data, role) = match param {
-        Parameter::Path { parameter_data, .. } => {
-            (parameter_data, ColumnRole::PathParam)
-        }
-        Parameter::Query { parameter_data, .. } => {
-            (parameter_data, ColumnRole::QueryParam)
-        }
+        Parameter::Path { parameter_data, .. } => (parameter_data, ColumnRole::PathParam),
+        Parameter::Query { parameter_data, .. } => (parameter_data, ColumnRole::QueryParam),
         _ => return Ok(None),
     };
 
@@ -370,7 +364,9 @@ fn param_to_column(
 
     let col_type = param_schema_to_type(spec, &data.format);
 
-    let description = data.description.as_ref()
+    let description = data
+        .description
+        .as_ref()
         .map(|d| crate::catalog::types::truncate_str(d, 120));
 
     Ok(Some(Column {
@@ -428,12 +424,10 @@ mod tests {
                 description: None,
                 required: false,
                 deprecated: None,
-                format: ParameterSchemaOrContent::Schema(ReferenceOr::Item(
-                    openapiv3::Schema {
-                        schema_data: Default::default(),
-                        schema_kind: SchemaKind::Type(OaType::Integer(Default::default())),
-                    },
-                )),
+                format: ParameterSchemaOrContent::Schema(ReferenceOr::Item(openapiv3::Schema {
+                    schema_data: Default::default(),
+                    schema_kind: SchemaKind::Type(OaType::Integer(Default::default())),
+                })),
                 example: None,
                 examples: Default::default(),
                 explode: None,

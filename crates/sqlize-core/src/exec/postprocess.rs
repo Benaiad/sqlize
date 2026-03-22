@@ -20,7 +20,9 @@ fn apply_local_filters(filters: &[LocalFilter], result: &mut ResultSet) {
     }
 
     result.rows.retain(|row| {
-        filters.iter().all(|f| row_matches_filter(row, &result.columns, f))
+        filters
+            .iter()
+            .all(|f| row_matches_filter(row, &result.columns, f))
     });
 }
 
@@ -108,7 +110,9 @@ fn compare_values(a: &Scalar, b: &Scalar) -> std::cmp::Ordering {
         (Scalar::Null, _) => std::cmp::Ordering::Greater, // NULLs sort last
         (_, Scalar::Null) => std::cmp::Ordering::Less,
         (Scalar::Integer(a), Scalar::Integer(b)) => a.cmp(b),
-        (Scalar::Float(a), Scalar::Float(b)) => a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
+        (Scalar::Float(a), Scalar::Float(b)) => {
+            a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+        }
         (Scalar::String(a), Scalar::String(b)) => a.cmp(b),
         (Scalar::Boolean(a), Scalar::Boolean(b)) => a.cmp(b),
         _ => std::cmp::Ordering::Equal,
@@ -172,7 +176,10 @@ fn apply_projections(projections: &[Projection], result: &mut ResultSet) {
         .rows
         .iter()
         .map(|row| {
-            let values = selected.iter().map(|(idx, _)| row.values()[*idx].clone()).collect();
+            let values = selected
+                .iter()
+                .map(|(idx, _)| row.values()[*idx].clone())
+                .collect();
             Row::new(values)
         })
         .collect();
@@ -193,9 +200,21 @@ mod tests {
                 ColumnName::new("age").unwrap(),
             ],
             rows: vec![
-                Row::new(vec![Scalar::Integer(1), Scalar::String("alice".into()), Scalar::Integer(30)]),
-                Row::new(vec![Scalar::Integer(2), Scalar::String("bob".into()), Scalar::Integer(25)]),
-                Row::new(vec![Scalar::Integer(3), Scalar::String("charlie".into()), Scalar::Integer(35)]),
+                Row::new(vec![
+                    Scalar::Integer(1),
+                    Scalar::String("alice".into()),
+                    Scalar::Integer(30),
+                ]),
+                Row::new(vec![
+                    Scalar::Integer(2),
+                    Scalar::String("bob".into()),
+                    Scalar::Integer(25),
+                ]),
+                Row::new(vec![
+                    Scalar::Integer(3),
+                    Scalar::String("charlie".into()),
+                    Scalar::Integer(35),
+                ]),
             ],
         }
     }

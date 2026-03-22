@@ -80,11 +80,8 @@ impl SqlizeServer {
                 match self.catalog.get(&table_name) {
                     Some(table) => table_ddl(table),
                     None => {
-                        let available: Vec<&str> = self
-                            .catalog
-                            .tables()
-                            .map(|t| t.name.as_str())
-                            .collect();
+                        let available: Vec<&str> =
+                            self.catalog.tables().map(|t| t.name.as_str()).collect();
                         format!(
                             "Table '{name}' not found. Available tables:\n{}",
                             available.join(", ")
@@ -93,9 +90,12 @@ impl SqlizeServer {
                 }
             }
             None => {
-                let mut out = String::from("Available tables (use get_schema with a table name for full DDL):\n\n");
+                let mut out = String::from(
+                    "Available tables (use get_schema with a table name for full DDL):\n\n",
+                );
                 for table in self.catalog.tables() {
-                    let required: Vec<_> = table.required_params().map(|c| c.name.as_str()).collect();
+                    let required: Vec<_> =
+                        table.required_params().map(|c| c.name.as_str()).collect();
                     let req = if required.is_empty() {
                         String::new()
                     } else {
@@ -164,14 +164,8 @@ impl SqlizeServer {
 #[rmcp::tool_handler]
 impl ServerHandler for SqlizeServer {
     fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(
-            ServerCapabilities::builder()
-                .enable_tools()
-                .build(),
-        )
-        .with_server_info(
-            Implementation::new("sqlize", env!("CARGO_PKG_VERSION")),
-        )
-        .with_instructions(&self.instructions)
+        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+            .with_server_info(Implementation::new("sqlize", env!("CARGO_PKG_VERSION")))
+            .with_instructions(&self.instructions)
     }
 }

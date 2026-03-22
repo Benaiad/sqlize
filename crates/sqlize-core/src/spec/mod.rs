@@ -22,14 +22,13 @@ pub struct SpecInfo {
 ///
 /// Returns a tuple of (Catalog, SpecInfo).
 pub fn load_catalog(path: &Path, tag_filter: Option<&[&str]>) -> Result<(Catalog, SpecInfo)> {
-    let content = std::fs::read_to_string(path)
-        .map_err(|e| Error::SpecRead {
-            path: path.to_owned(),
-            message: e.to_string(),
-        })?;
+    let content = std::fs::read_to_string(path).map_err(|e| Error::SpecRead {
+        path: path.to_owned(),
+        message: e.to_string(),
+    })?;
 
-    let spec: OpenAPI = serde_json::from_str(&content)
-        .map_err(|e| Error::SpecParse(e.to_string()))?;
+    let spec: OpenAPI =
+        serde_json::from_str(&content).map_err(|e| Error::SpecParse(e.to_string()))?;
 
     let title = spec.info.title.clone();
     let base_url = extract_base_url(&spec)?;

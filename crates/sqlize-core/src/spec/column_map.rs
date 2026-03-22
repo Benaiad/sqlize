@@ -9,11 +9,7 @@ use crate::error::Result;
 /// produces columns: `id`, `title`, `user_login`, `user_id`.
 ///
 /// Deeply nested objects and arrays become `ColumnType::Json`.
-pub fn columns_from_schema(
-    spec: &OpenAPI,
-    schema: &Schema,
-    prefix: &str,
-) -> Result<Vec<Column>> {
+pub fn columns_from_schema(spec: &OpenAPI, schema: &Schema, prefix: &str) -> Result<Vec<Column>> {
     let mut columns = Vec::new();
     collect_columns(spec, schema, prefix, 0, &mut columns)?;
     Ok(columns)
@@ -28,47 +24,42 @@ fn collect_columns(
 ) -> Result<()> {
     let required_fields = required_set(schema);
 
-    match &schema.schema_kind {
-        SchemaKind::Type(OaType::Object(obj)) => {
-            for (name, prop_ref) in &obj.properties {
-                let col_name_str = if prefix.is_empty() {
-                    sanitize_name(name)
-                } else {
-                    format!("{prefix}_{}", sanitize_name(name))
-                };
+    if let SchemaKind::Type(OaType::Object(obj)) = &schema.schema_kind {
+        for (name, prop_ref) in &obj.properties {
+            let col_name_str = if prefix.is_empty() {
+                sanitize_name(name)
+            } else {
+                format!("{prefix}_{}", sanitize_name(name))
+            };
 
-                let Some(resolved) = resolve_boxed_schema(spec, prop_ref) else {
-                    // Unresolvable ref — skip
-                    continue;
-                };
+            let Some(resolved) = resolve_boxed_schema(spec, prop_ref) else {
+                // Unresolvable ref — skip
+                continue;
+            };
 
-                let is_required = required_fields.contains(&name.as_str());
+            let is_required = required_fields.contains(&name.as_str());
 
-                if depth < 1 && is_nested_object(resolved) {
-                    // Flatten one level deep
-                    collect_columns(spec, resolved, &col_name_str, depth + 1, out)?;
-                } else {
-                    let col_type = schema_to_column_type(resolved);
-                    let description = schema_description(resolved);
+            if depth < 1 && is_nested_object(resolved) {
+                // Flatten one level deep
+                collect_columns(spec, resolved, &col_name_str, depth + 1, out)?;
+            } else {
+                let col_type = schema_to_column_type(resolved);
+                let description = schema_description(resolved);
 
-                    if let Ok(col_name) = ColumnName::new(&col_name_str) {
-                        out.push(Column {
-                            name: col_name,
-                            col_type,
-                            nullable: !is_required,
-                            description,
-                            role: ColumnRole::ResponseField,
-                            api_name: None,
-                        });
-                    }
-                    // Skip columns with names that don't validate (rare edge cases)
+                if let Ok(col_name) = ColumnName::new(&col_name_str) {
+                    out.push(Column {
+                        name: col_name,
+                        col_type,
+                        nullable: !is_required,
+                        description,
+                        role: ColumnRole::ResponseField,
+                        api_name: None,
+                    });
                 }
+                // Skip columns with names that don't validate (rare edge cases)
             }
         }
-        // For non-object schemas at the top level, there's nothing to flatten.
-        _ => {}
     }
-
     Ok(())
 }
 
@@ -79,7 +70,9 @@ fn is_nested_object(schema: &Schema) -> bool {
 fn schema_to_column_type(schema: &Schema) -> ColumnType {
     match &schema.schema_kind {
         SchemaKind::Type(OaType::String(s)) => {
-            if s.format == openapiv3::VariantOrUnknownOrEmpty::Item(openapiv3::StringFormat::DateTime) {
+            if s.format
+                == openapiv3::VariantOrUnknownOrEmpty::Item(openapiv3::StringFormat::DateTime)
+            {
                 ColumnType::Timestamp
             } else {
                 ColumnType::String
@@ -104,9 +97,7 @@ fn schema_description(schema: &Schema) -> Option<String> {
 
 fn required_set(schema: &Schema) -> std::collections::HashSet<&str> {
     match &schema.schema_kind {
-        SchemaKind::Type(OaType::Object(obj)) => {
-            obj.required.iter().map(|s| s.as_str()).collect()
-        }
+        SchemaKind::Type(OaType::Object(obj)) => obj.required.iter().map(|s| s.as_str()).collect(),
         _ => std::collections::HashSet::new(),
     }
 }

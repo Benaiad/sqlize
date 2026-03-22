@@ -28,7 +28,9 @@ impl Catalog {
             map.insert(table.name.clone(), table);
         }
         if map.is_empty() {
-            tracing::warn!("catalog is empty — no tables were generated from the spec (check your tag filter)");
+            tracing::warn!(
+                "catalog is empty — no tables were generated from the spec (check your tag filter)"
+            );
         }
         Ok(Self { tables: map })
     }
@@ -50,5 +52,4 @@ impl Catalog {
         self.get(name)
             .ok_or_else(|| Error::TableNotFound(name.clone()))
     }
-
 }

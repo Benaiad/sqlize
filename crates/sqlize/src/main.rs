@@ -112,8 +112,7 @@ async fn main() -> anyhow::Result<()> {
                 "sqlize MCP server starting"
             );
 
-            let server =
-                mcp::SqlizeServer::new(Arc::new(catalog), auth, &spec_info.title);
+            let server = mcp::SqlizeServer::new(Arc::new(catalog), auth, &spec_info.title);
             let transport = rmcp::transport::io::stdio();
 
             let service = server
@@ -126,13 +125,17 @@ async fn main() -> anyhow::Result<()> {
         Some(Command::Query { sql }) => {
             let plan = sqlize_core::sql::planner::plan_query(&sql, &catalog)
                 .map_err(|e| anyhow::anyhow!("{e}"))?;
-            let result = sqlize_core::exec::execute(&plan, &auth, &client).await
+            let result = sqlize_core::exec::execute(&plan, &auth, &client)
+                .await
                 .map_err(|e| anyhow::anyhow!("{e}"))?;
 
             match cli.format {
                 repl::OutputFormat::Toon => {
-                    println!("{}", sqlize_core::output::result_set_to_toon(&result)
-                        .map_err(|e| anyhow::anyhow!("{e}"))?);
+                    println!(
+                        "{}",
+                        sqlize_core::output::result_set_to_toon(&result)
+                            .map_err(|e| anyhow::anyhow!("{e}"))?
+                    );
                 }
                 _ => {
                     println!("{}", sqlize_core::output::result_set_to_json(&result));
@@ -144,20 +147,19 @@ async fn main() -> anyhow::Result<()> {
                 .map_err(|e| anyhow::anyhow!("{e}"))?;
             print!("{}", sqlize_core::sql::planner::explain(&plan));
         }
-        Some(Command::Schema { table }) => {
-            match table {
-                Some(name) => {
-                    let table_name = sqlize_core::catalog::types::TableName::new(&name)
-                        .map_err(|e| anyhow::anyhow!("{e}"))?;
-                    let t = catalog.require(&table_name)
-                        .map_err(|e| anyhow::anyhow!("{e}"))?;
-                    print!("{}", sqlize_core::catalog::ddl::table_ddl(t));
-                }
-                None => {
-                    print!("{}", sqlize_core::catalog::ddl::catalog_ddl(&catalog));
-                }
+        Some(Command::Schema { table }) => match table {
+            Some(name) => {
+                let table_name = sqlize_core::catalog::types::TableName::new(&name)
+                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+                let t = catalog
+                    .require(&table_name)
+                    .map_err(|e| anyhow::anyhow!("{e}"))?;
+                print!("{}", sqlize_core::catalog::ddl::table_ddl(t));
             }
-        }
+            None => {
+                print!("{}", sqlize_core::catalog::ddl::catalog_ddl(&catalog));
+            }
+        },
         None => {
             eprintln!(
                 "{} — {} tables from {}",

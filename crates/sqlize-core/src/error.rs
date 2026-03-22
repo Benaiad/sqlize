@@ -19,10 +19,16 @@ pub enum Error {
     TableNotFound(TableName),
 
     #[error("column {column} not found in table {table}")]
-    ColumnNotFound { table: TableName, column: ColumnName },
+    ColumnNotFound {
+        table: TableName,
+        column: ColumnName,
+    },
 
     #[error("missing required parameter {column} for table {table}")]
-    MissingRequiredParam { table: TableName, column: ColumnName },
+    MissingRequiredParam {
+        table: TableName,
+        column: ColumnName,
+    },
 
     #[error("duplicate table name: {0}")]
     DuplicateTable(TableName),
@@ -52,7 +58,11 @@ pub enum Error {
 
     // ---- Execution ----
     #[error("API returned {status}: {body}")]
-    ApiError { status: u16, url: String, body: String },
+    ApiError {
+        status: u16,
+        url: String,
+        body: String,
+    },
 
     #[error("failed to resolve URL: missing path parameters")]
     UnresolvedUrl,

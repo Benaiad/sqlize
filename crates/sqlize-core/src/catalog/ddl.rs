@@ -17,22 +17,13 @@ pub fn table_ddl(table: &VirtualTable) -> String {
     let required: Vec<_> = table.required_params().collect();
     if !required.is_empty() {
         let names: Vec<_> = required.iter().map(|c| c.name.as_str()).collect();
-        writeln!(
-            out,
-            "-- Required WHERE clause: {}",
-            names.join(" AND ")
-        )
-        .unwrap();
+        writeln!(out, "-- Required WHERE clause: {}", names.join(" AND ")).unwrap();
     }
 
     writeln!(out, "CREATE TABLE {} (", table.name).unwrap();
 
     for (i, col) in table.columns.iter().enumerate() {
-        let trailing_comma = if i + 1 < table.columns.len() {
-            ","
-        } else {
-            ""
-        };
+        let trailing_comma = if i + 1 < table.columns.len() { "," } else { "" };
         let nullable = if col.nullable { "" } else { " NOT NULL" };
 
         let origin_tag = match col.role {

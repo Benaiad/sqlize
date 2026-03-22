@@ -47,12 +47,18 @@ impl fmt::Display for TableName {
 pub struct ApiParamName(String);
 
 impl ApiParamName {
-    pub fn new(s: impl Into<String>) -> Self { Self(s.into()) }
-    pub fn as_str(&self) -> &str { &self.0 }
+    pub fn new(s: impl Into<String>) -> Self {
+        Self(s.into())
+    }
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 impl fmt::Display for ApiParamName {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { f.write_str(&self.0) }
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
 }
 
 /// A validated, non-empty column name containing only `[a-z0-9_]`.
@@ -121,11 +127,7 @@ impl PathTemplate {
     pub fn placeholders(&self) -> Vec<&str> {
         self.0
             .split('/')
-            .filter_map(|segment| {
-                segment
-                    .strip_prefix('{')
-                    .and_then(|s| s.strip_suffix('}'))
-            })
+            .filter_map(|segment| segment.strip_prefix('{').and_then(|s| s.strip_suffix('}')))
             .collect()
     }
 
@@ -204,7 +206,10 @@ impl ColumnRole {
 
     /// Whether a WHERE `=` filter on this column can be pushed to the API.
     pub fn is_pushable(&self) -> bool {
-        matches!(self, Self::PathParam | Self::QueryParam | Self::QueryParamAndResponse)
+        matches!(
+            self,
+            Self::PathParam | Self::QueryParam | Self::QueryParamAndResponse
+        )
     }
 
     /// Whether this column appears in query results.
@@ -234,7 +239,10 @@ impl Column {
     /// The key to use when sending this column's value as an API parameter.
     /// Falls back to the SQL column name when no explicit API name is set.
     pub fn api_param_key(&self) -> &str {
-        self.api_name.as_ref().map(|n| n.as_str()).unwrap_or(self.name.as_str())
+        self.api_name
+            .as_ref()
+            .map(|n| n.as_str())
+            .unwrap_or(self.name.as_str())
     }
 }
 
@@ -371,7 +379,10 @@ pub fn truncate_str(s: &str, max_chars: usize) -> String {
     if first_line.chars().count() <= max_chars {
         first_line.to_owned()
     } else {
-        let truncated: String = first_line.chars().take(max_chars.saturating_sub(3)).collect();
+        let truncated: String = first_line
+            .chars()
+            .take(max_chars.saturating_sub(3))
+            .collect();
         format!("{truncated}...")
     }
 }
@@ -419,6 +430,10 @@ impl Row {
 
     pub fn len(&self) -> usize {
         self.0.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 
     pub fn values(&self) -> &[Scalar] {

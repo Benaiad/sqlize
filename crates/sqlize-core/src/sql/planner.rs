@@ -9,11 +9,10 @@ use crate::catalog::Catalog;
 use crate::catalog::types::{ApiParamName, ColumnName, TableName, VirtualTable};
 use crate::error::{Error, Result};
 
-use crate::catalog::types::Scalar;
 use super::plan::{
-    ApiCall, FilterOp, LocalFilter, OrderByItem, PostProcessing, Projection,
-    QueryPlan, PlanSource,
+    ApiCall, FilterOp, LocalFilter, OrderByItem, PlanSource, PostProcessing, Projection, QueryPlan,
 };
+use crate::catalog::types::Scalar;
 
 /// Parse a SQL string and produce a `QueryPlan`.
 ///
@@ -23,18 +22,26 @@ use super::plan::{
 /// - ORDER BY, LIMIT, OFFSET
 /// - Column projections and SELECT *
 pub fn plan_query(sql: &str, catalog: &Catalog) -> Result<QueryPlan> {
-    let statements = Parser::parse_sql(&GenericDialect {}, sql)
-        .map_err(|e| Error::SqlParse(e.to_string()))?;
+    let statements =
+        Parser::parse_sql(&GenericDialect {}, sql).map_err(|e| Error::SqlParse(e.to_string()))?;
 
     let statement = match statements.as_slice() {
         [single] => single,
         [] => return Err(Error::UnsupportedSql("empty query".to_owned())),
-        _ => return Err(Error::UnsupportedSql("multiple statements not supported".to_owned())),
+        _ => {
+            return Err(Error::UnsupportedSql(
+                "multiple statements not supported".to_owned(),
+            ));
+        }
     };
 
     let query = match statement {
         Statement::Query(q) => q,
-        _ => return Err(Error::UnsupportedSql("only SELECT queries are supported".to_owned())),
+        _ => {
+            return Err(Error::UnsupportedSql(
+                "only SELECT queries are supported".to_owned(),
+            ));
+        }
     };
 
     plan_select(query, catalog)
@@ -43,12 +50,18 @@ pub fn plan_query(sql: &str, catalog: &Catalog) -> Result<QueryPlan> {
 fn plan_select(query: &Query, catalog: &Catalog) -> Result<QueryPlan> {
     // Reject CTEs, set operations, etc.
     if query.with.is_some() {
-        return Err(Error::UnsupportedSql("WITH (CTEs) not supported".to_owned()));
+        return Err(Error::UnsupportedSql(
+            "WITH (CTEs) not supported".to_owned(),
+        ));
     }
 
     let select = match query.body.as_ref() {
         SetExpr::Select(s) => s,
-        _ => return Err(Error::UnsupportedSql("only simple SELECT supported (no UNION, INTERSECT, etc.)".to_owned())),
+        _ => {
+            return Err(Error::UnsupportedSql(
+                "only simple SELECT supported (no UNION, INTERSECT, etc.)".to_owned(),
+            ));
+        }
     };
 
     // Extract the source table
@@ -121,7 +134,8 @@ fn extract_single_table(select: &Select) -> Result<TableRef> {
             name: name.to_string(),
         }),
         _ => Err(Error::UnsupportedSql(
-            "only simple table references supported (no subqueries, table functions, etc.)".to_owned(),
+            "only simple table references supported (no subqueries, table functions, etc.)"
+                .to_owned(),
         )),
     }
 }
@@ -161,10 +175,7 @@ fn flatten_and_conditions(expr: &Expr) -> Vec<&Expr> {
     }
 }
 
-fn classify_conditions(
-    conditions: &[&Expr],
-    table: &VirtualTable,
-) -> Result<ClassifiedConditions> {
+fn classify_conditions(conditions: &[&Expr], table: &VirtualTable) -> Result<ClassifiedConditions> {
     let mut params = std::collections::HashMap::new();
     let mut local_filters = Vec::new();
 
@@ -178,7 +189,8 @@ fn classify_conditions(
             }
             Err(_) => {
                 return Err(Error::UnsupportedSql(
-                    "unsupported WHERE condition (only column = value with AND supported)".to_owned(),
+                    "unsupported WHERE condition (only column = value with AND supported)"
+                        .to_owned(),
                 ));
             }
         }
@@ -191,14 +203,14 @@ fn classify_conditions(
 }
 
 enum ConditionClass {
-    Param { api_name: ApiParamName, value: Scalar },
+    Param {
+        api_name: ApiParamName,
+        value: Scalar,
+    },
     LocalFilter(LocalFilter),
 }
 
-fn classify_single_condition(
-    expr: &Expr,
-    table: &VirtualTable,
-) -> Result<ConditionClass> {
+fn classify_single_condition(expr: &Expr, table: &VirtualTable) -> Result<ConditionClass> {
     // Handle IS NULL / IS NOT NULL
     if let Expr::IsNull(inner) = expr {
         let col_name = extract_column_name(inner)?;
@@ -219,7 +231,9 @@ fn classify_single_condition(
 
     // Handle binary operations: column op value
     let Expr::BinaryOp { left, op, right } = expr else {
-        return Err(Error::UnsupportedSql("unsupported WHERE expression".to_owned()));
+        return Err(Error::UnsupportedSql(
+            "unsupported WHERE expression".to_owned(),
+        ));
     };
 
     let col_name = extract_column_name(left)?;
@@ -227,10 +241,7 @@ fn classify_single_condition(
     let filter_value = extract_value(right)?;
 
     // Look up the column in the table to determine its origin
-    let column = table
-        .columns
-        .iter()
-        .find(|c| c.name == col_name);
+    let column = table.columns.iter().find(|c| c.name == col_name);
 
     match column {
         Some(col) if col.role.is_pushable() && filter_op == FilterOp::Eq => {
@@ -302,17 +313,17 @@ fn extract_value(expr: &Expr) -> Result<Scalar> {
             }
             SqlValue::Boolean(b) => Ok(Scalar::Boolean(*b)),
             SqlValue::Null => Ok(Scalar::Null),
-            _ => Err(Error::UnsupportedSql("unsupported value type in WHERE".to_owned())),
+            _ => Err(Error::UnsupportedSql(
+                "unsupported value type in WHERE".to_owned(),
+            )),
         },
-        Expr::Identifier(ident) => Err(Error::UnsupportedSql(
-            format!(
-                "unquoted value '{}' — did you mean '{}'?",
-                ident.value,
-                ident.value,
-            ),
-        )),
+        Expr::Identifier(ident) => Err(Error::UnsupportedSql(format!(
+            "unquoted value '{}' — did you mean '{}'?",
+            ident.value, ident.value,
+        ))),
         _ => Err(Error::UnsupportedSql(
-            "right side of WHERE condition must be a literal value (use single quotes for strings)".to_owned(),
+            "right side of WHERE condition must be a literal value (use single quotes for strings)"
+                .to_owned(),
         )),
     }
 }
@@ -321,10 +332,7 @@ fn extract_value(expr: &Expr) -> Result<Scalar> {
 // Required param validation
 // ---------------------------------------------------------------------------
 
-fn validate_required_params(
-    table: &VirtualTable,
-    classified: &ClassifiedConditions,
-) -> Result<()> {
+fn validate_required_params(table: &VirtualTable, classified: &ClassifiedConditions) -> Result<()> {
     for col in table.required_params() {
         let key = ApiParamName::new(col.api_param_key());
         if !classified.params.contains_key(&key) {
@@ -353,10 +361,7 @@ fn build_api_call(table: &VirtualTable, classified: &ClassifiedConditions) -> Ap
 // Projections
 // ---------------------------------------------------------------------------
 
-fn plan_projections(
-    items: &[SelectItem],
-    table: &VirtualTable,
-) -> Result<Vec<Projection>> {
+fn plan_projections(items: &[SelectItem], table: &VirtualTable) -> Result<Vec<Projection>> {
     let mut projections = Vec::new();
 
     for item in items {
@@ -380,9 +385,11 @@ fn plan_projections(
                     alias: Some(alias.value.clone()),
                 });
             }
-            _ => return Err(Error::UnsupportedSql(
-                "unsupported SELECT item (only columns, aliases, and * supported)".to_owned(),
-            )),
+            _ => {
+                return Err(Error::UnsupportedSql(
+                    "unsupported SELECT item (only columns, aliases, and * supported)".to_owned(),
+                ));
+            }
         }
     }
 
@@ -390,17 +397,23 @@ fn plan_projections(
 }
 
 fn validate_column(table: &VirtualTable, col: &ColumnName) -> Result<()> {
-    table.column(col).map(|_| ()).ok_or_else(|| Error::ColumnNotFound {
-        table: table.name.clone(),
-        column: col.clone(),
-    })
+    table
+        .column(col)
+        .map(|_| ())
+        .ok_or_else(|| Error::ColumnNotFound {
+            table: table.name.clone(),
+            column: col.clone(),
+        })
 }
 
 // ---------------------------------------------------------------------------
 // ORDER BY
 // ---------------------------------------------------------------------------
 
-fn plan_order_by(order_by: &Option<ast::OrderBy>, table: &VirtualTable) -> Result<Vec<OrderByItem>> {
+fn plan_order_by(
+    order_by: &Option<ast::OrderBy>,
+    table: &VirtualTable,
+) -> Result<Vec<OrderByItem>> {
     let Some(ob) = order_by else {
         return Ok(Vec::new());
     };
@@ -408,7 +421,9 @@ fn plan_order_by(order_by: &Option<ast::OrderBy>, table: &VirtualTable) -> Resul
     let exprs = match &ob.kind {
         OrderByKind::Expressions(exprs) => exprs,
         OrderByKind::All(_) => {
-            return Err(Error::UnsupportedSql("ORDER BY ALL not supported".to_owned()))
+            return Err(Error::UnsupportedSql(
+                "ORDER BY ALL not supported".to_owned(),
+            ));
         }
     };
 
@@ -416,7 +431,7 @@ fn plan_order_by(order_by: &Option<ast::OrderBy>, table: &VirtualTable) -> Resul
     for expr in exprs {
         let col_name = extract_column_name(&expr.expr)?;
         validate_column(table, &col_name)?;
-        let descending = expr.options.asc.map_or(false, |asc| !asc);
+        let descending = expr.options.asc.is_some_and(|asc| !asc);
         items.push(OrderByItem {
             column: col_name,
             descending,
@@ -476,10 +491,15 @@ pub fn explain(plan: &QueryPlan) -> String {
 
     if !plan.post.order_by.is_empty() {
         out.push_str("Order by: ");
-        let items: Vec<_> = plan.post.order_by.iter().map(|o| {
-            let dir = if o.descending { "DESC" } else { "ASC" };
-            format!("{} {dir}", o.column)
-        }).collect();
+        let items: Vec<_> = plan
+            .post
+            .order_by
+            .iter()
+            .map(|o| {
+                let dir = if o.descending { "DESC" } else { "ASC" };
+                format!("{} {dir}", o.column)
+            })
+            .collect();
         out.push_str(&items.join(", "));
         out.push('\n');
     }
@@ -500,7 +520,8 @@ fn explain_source(source: &PlanSource, out: &mut String, indent: usize) {
         PlanSource::ApiCall(call) => {
             // Resolve the URL with actual param values
             let url = call.endpoint.url(|placeholder| {
-                call.columns.iter()
+                call.columns
+                    .iter()
                     .find(|c| c.api_param_key() == placeholder)
                     .and_then(|c| {
                         let key = crate::catalog::types::ApiParamName::new(c.api_param_key());
@@ -511,12 +532,12 @@ fn explain_source(source: &PlanSource, out: &mut String, indent: usize) {
                     })
             });
 
-            let base = url
-                .as_deref()
-                .unwrap_or(call.endpoint.path.as_str());
+            let base = url.as_deref().unwrap_or(call.endpoint.path.as_str());
 
             // Collect query params
-            let query: Vec<String> = call.columns.iter()
+            let query: Vec<String> = call
+                .columns
+                .iter()
                 .filter(|c| c.role.is_pushable() && !c.role.is_required())
                 .filter_map(|c| {
                     let key = crate::catalog::types::ApiParamName::new(c.api_param_key());
@@ -528,7 +549,11 @@ fn explain_source(source: &PlanSource, out: &mut String, indent: usize) {
             if query.is_empty() {
                 out.push_str(&format!("{pad}{} {base}\n", call.endpoint.method));
             } else {
-                out.push_str(&format!("{pad}{} {base}?{}\n", call.endpoint.method, query.join("&")));
+                out.push_str(&format!(
+                    "{pad}{} {base}?{}\n",
+                    call.endpoint.method,
+                    query.join("&")
+                ));
             }
         }
     }
@@ -623,9 +648,18 @@ mod tests {
 
         let PlanSource::ApiCall(call) = &plan.source;
 
-        assert_eq!(call.params.get(&ApiParamName::new("owner")).unwrap(), &Scalar::String("anthropics".into()));
-        assert_eq!(call.params.get(&ApiParamName::new("repo")).unwrap(), &Scalar::String("claude-code".into()));
-        assert_eq!(call.params.get(&ApiParamName::new("state")).unwrap(), &Scalar::String("open".into()));
+        assert_eq!(
+            call.params.get(&ApiParamName::new("owner")).unwrap(),
+            &Scalar::String("anthropics".into())
+        );
+        assert_eq!(
+            call.params.get(&ApiParamName::new("repo")).unwrap(),
+            &Scalar::String("claude-code".into())
+        );
+        assert_eq!(
+            call.params.get(&ApiParamName::new("state")).unwrap(),
+            &Scalar::String("open".into())
+        );
         assert_eq!(plan.post.limit, Some(10));
         assert_eq!(plan.post.projections.len(), 2);
     }
@@ -633,10 +667,7 @@ mod tests {
     #[test]
     fn missing_required_param_is_error() {
         let catalog = test_catalog();
-        let result = plan_query(
-            "SELECT * FROM issues WHERE owner = 'anthropics'",
-            &catalog,
-        );
+        let result = plan_query("SELECT * FROM issues WHERE owner = 'anthropics'", &catalog);
         assert!(matches!(result, Err(Error::MissingRequiredParam { .. })));
     }
 
@@ -646,7 +677,8 @@ mod tests {
         let plan = plan_query(
             "SELECT * FROM issues WHERE owner = 'a' AND repo = 'b' AND number > 100",
             &catalog,
-        ).unwrap();
+        )
+        .unwrap();
 
         assert_eq!(plan.post.local_filters.len(), 1);
         assert_eq!(plan.post.local_filters[0].column.as_str(), "number");
@@ -677,7 +709,11 @@ mod tests {
         ).unwrap();
 
         let output = explain(&plan);
-        assert!(output.contains("GET https://api.github.com/repos/anthropics/claude-code/issues?state=open"));
+        assert!(
+            output.contains(
+                "GET https://api.github.com/repos/anthropics/claude-code/issues?state=open"
+            )
+        );
         assert!(output.contains("Limit: 5"));
     }
 
