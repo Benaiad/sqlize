@@ -121,17 +121,28 @@ fn try_build_table(
         }
     }
 
-    // Response fields — skip columns whose name already exists as a param,
-    // since the param column already represents that field (e.g., `state` is
-    // both a query param for filtering and a response field for the value).
-    let param_names: std::collections::HashSet<_> =
-        columns.iter().map(|c| c.name.as_str().to_owned()).collect();
+    // Response fields — when a response field shares a name with a query param,
+    // upgrade the param column to QueryParamAndResponseField and use the response
+    // field's metadata (description, nullability). This handles columns like `state`
+    // which is both filterable and present in the response.
     let response_columns = columns_from_schema(spec, item_schema, "")?;
-    columns.extend(
-        response_columns
-            .into_iter()
-            .filter(|c| !param_names.contains(c.name.as_str())),
-    );
+    for resp_col in response_columns {
+        if let Some(existing) = columns.iter_mut().find(|c| c.name == resp_col.name) {
+            if let ColumnOrigin::QueryParam { ref api_name } = existing.origin {
+                existing.origin = ColumnOrigin::QueryParamAndResponseField {
+                    api_name: api_name.clone(),
+                };
+                // Prefer the response field's metadata — it describes the value,
+                // not the filter semantics.
+                if resp_col.description.is_some() {
+                    existing.description = resp_col.description;
+                }
+                existing.nullable = resp_col.nullable;
+            }
+        } else {
+            columns.push(resp_col);
+        }
+    }
 
     let description = operation
         .summary

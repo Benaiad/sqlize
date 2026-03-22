@@ -38,6 +38,7 @@ fn table_ddl(table: &VirtualTable) -> String {
         let origin_tag = match &col.origin {
             ColumnOrigin::PathParam => " [required param]",
             ColumnOrigin::QueryParam { .. } => " [filterable]",
+            ColumnOrigin::QueryParamAndResponseField { .. } => " [filterable]",
             ColumnOrigin::ResponseField => "",
         };
 

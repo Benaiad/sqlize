@@ -157,7 +157,8 @@ async fn execute_paginated(
             call.path_params.clone();
         for col in table.pushdown_params() {
             let api_name = match &col.origin {
-                crate::catalog::types::ColumnOrigin::QueryParam { api_name } => {
+                crate::catalog::types::ColumnOrigin::QueryParam { api_name }
+                | crate::catalog::types::ColumnOrigin::QueryParamAndResponseField { api_name } => {
                     api_name.as_deref().unwrap_or(col.name.as_str())
                 }
                 _ => continue,

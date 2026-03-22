@@ -253,7 +253,10 @@ fn classify_single_condition(
                     value: value_str,
                 })
             }
-            ColumnOrigin::QueryParam { api_name } if filter_op == FilterOp::Eq => {
+            ColumnOrigin::QueryParam { api_name }
+            | ColumnOrigin::QueryParamAndResponseField { api_name }
+                if filter_op == FilterOp::Eq =>
+            {
                 let param_name = api_name
                     .as_deref()
                     .unwrap_or(col.name.as_str())

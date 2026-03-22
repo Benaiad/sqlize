@@ -176,6 +176,12 @@ pub enum ColumnOrigin {
     },
     /// From the response body. Cannot influence the API call.
     ResponseField,
+    /// Both a query parameter (for filtering) and a response field (for the value).
+    /// Example: `state` can be filtered via `?state=open` and also appears in the response.
+    QueryParamAndResponseField {
+        /// The API parameter name, if different from the column name.
+        api_name: Option<String>,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -265,7 +271,7 @@ impl VirtualTable {
     pub fn pushdown_params(&self) -> impl Iterator<Item = &Column> {
         self.columns
             .iter()
-            .filter(|c| matches!(c.origin, ColumnOrigin::QueryParam { .. }))
+            .filter(|c| matches!(c.origin, ColumnOrigin::QueryParam { .. } | ColumnOrigin::QueryParamAndResponseField { .. }))
     }
 
     /// Columns that come from the response body.
