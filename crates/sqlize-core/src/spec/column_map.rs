@@ -1,6 +1,6 @@
 use openapiv3::{OpenAPI, ReferenceOr, Schema, SchemaKind, Type as OaType};
 
-use crate::catalog::types::{Column, ColumnName, ColumnSource, PushdownKind, ColumnType, sanitize_name};
+use crate::catalog::types::{Column, ColumnName, ColumnRole, ColumnType, sanitize_name};
 use crate::error::Result;
 
 /// Extract columns from a response schema, flattening one level of nesting.
@@ -58,8 +58,7 @@ fn collect_columns(
                             col_type,
                             nullable: !is_required,
                             description,
-                            source: ColumnSource::ResponseField,
-                    pushdown: PushdownKind::LocalOnly,
+                            role: ColumnRole::ResponseField,
                             api_name,
                         });
                     }

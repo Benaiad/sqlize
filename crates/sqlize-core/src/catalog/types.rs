@@ -161,31 +161,43 @@ impl fmt::Display for ColumnType {
 }
 
 // ---------------------------------------------------------------------------
-// Column origin — where this column comes from in the API
+// Column role — unified origin + pushdown semantics
 // ---------------------------------------------------------------------------
 
-/// Where the column's data comes from.
+/// The role a column plays in the API ↔ SQL bridge.
+///
+/// Combines the column's data origin (path param, query param, response field)
+/// with its pushdown semantics (required, optional, local-only) into a single
+/// discriminant, since every valid combination is captured by exactly one variant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ColumnSource {
-    /// URL path placeholder (e.g., `{owner}`).
+pub enum ColumnRole {
+    /// URL path placeholder (e.g., `{owner}`). Required in WHERE, injected into URL.
     PathParam,
-    /// API query parameter only (not in the response body).
+    /// API query parameter only. Optional pushdown, excluded from results.
     QueryParam,
-    /// Response body field.
-    ResponseField,
     /// Both a query parameter and a response field (e.g., `state`).
+    /// Optional pushdown, present in results.
     QueryParamAndResponse,
+    /// Response body field. Local-only filtering, present in results.
+    ResponseField,
 }
 
-/// How a column's filter is handled during execution.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PushdownKind {
-    /// Must appear in WHERE — path parameters.
-    Required,
-    /// Pushed to the API when present in WHERE.
-    Optional,
-    /// Evaluated locally after fetching.
-    LocalOnly,
+impl ColumnRole {
+    /// Whether this column must appear in every WHERE clause (path params).
+    pub fn is_required(&self) -> bool {
+        matches!(self, Self::PathParam)
+    }
+
+    /// Whether a WHERE `=` filter on this column can be pushed to the API.
+    pub fn is_pushable(&self) -> bool {
+        matches!(self, Self::PathParam | Self::QueryParam | Self::QueryParamAndResponse)
+    }
+
+    /// Whether this column appears in query results.
+    /// Pure query params (sort, direction, etc.) are filter controls, not data.
+    pub fn appears_in_results(&self) -> bool {
+        !matches!(self, Self::QueryParam)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -198,8 +210,7 @@ pub struct Column {
     pub col_type: ColumnType,
     pub nullable: bool,
     pub description: Option<String>,
-    pub source: ColumnSource,
-    pub pushdown: PushdownKind,
+    pub role: ColumnRole,
     /// The API parameter name used in HTTP requests. Defaults to the column name.
     pub api_name: String,
 }
@@ -272,25 +283,22 @@ impl VirtualTable {
         self.columns.iter().find(|c| c.name == *name)
     }
 
-    /// Columns that must appear in every WHERE clause.
+    /// Columns that must appear in every WHERE clause (path params).
     pub fn required_params(&self) -> impl Iterator<Item = &Column> {
-        self.columns
-            .iter()
-            .filter(|c| matches!(c.pushdown, PushdownKind::Required))
+        self.columns.iter().filter(|c| c.role.is_required())
     }
 
-    /// Columns that can be pushed down as query parameters.
+    /// Columns whose `=` filters can be pushed to the API as query parameters.
+    /// Excludes path params (which are handled separately via URL interpolation).
     pub fn pushdown_params(&self) -> impl Iterator<Item = &Column> {
         self.columns
             .iter()
-            .filter(|c| matches!(c.pushdown, PushdownKind::Optional))
+            .filter(|c| c.role.is_pushable() && !c.role.is_required())
     }
 
-    /// Columns that come from the response body.
-    pub fn response_columns(&self) -> impl Iterator<Item = &Column> {
-        self.columns
-            .iter()
-            .filter(|c| matches!(c.source, ColumnSource::ResponseField))
+    /// Columns that appear in query results.
+    pub fn result_columns(&self) -> impl Iterator<Item = &Column> {
+        self.columns.iter().filter(|c| c.role.appears_in_results())
     }
 }
 

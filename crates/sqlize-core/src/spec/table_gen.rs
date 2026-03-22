@@ -4,7 +4,7 @@ use openapiv3::{
 };
 
 use crate::catalog::types::{
-    ApiEndpoint, Column, ColumnName, ColumnSource, PushdownKind, ColumnType, HttpMethod, PathTemplate,
+    ApiEndpoint, Column, ColumnName, ColumnRole, ColumnType, HttpMethod, PathTemplate,
     VirtualTable,
 };
 use crate::error::{Error, Result};
@@ -109,9 +109,9 @@ fn try_build_table(
         .map_err(|_| Error::InvalidPath { path: path_str.to_owned(), reason: "invalid path template" })?;
 
     // Build columns from three sources:
-    // 1. Path parameters → ColumnSource, PushdownKind::PathParam
-    // 2. Query parameters → ColumnSource, PushdownKind::QueryParam
-    // 3. Response schema → ColumnSource, PushdownKind::ResponseField
+    // 1. Path parameters → ColumnRole::PathParam
+    // 2. Query parameters → ColumnRole::QueryParam
+    // 3. Response schema → ColumnRole::ResponseField
     let mut columns = Vec::new();
 
     // Path parameters from both the path item and the operation
@@ -129,8 +129,8 @@ fn try_build_table(
     let response_columns = columns_from_schema(spec, item_schema, "")?;
     for resp_col in response_columns {
         if let Some(existing) = columns.iter_mut().find(|c| c.name == resp_col.name) {
-            if matches!(existing.source, ColumnSource::QueryParam) {
-                existing.source = ColumnSource::QueryParamAndResponse;
+            if matches!(existing.role, ColumnRole::QueryParam) {
+                existing.role = ColumnRole::QueryParamAndResponse;
                 // Prefer the response field's metadata — it describes the value,
                 // not the filter semantics.
                 if resp_col.description.is_some() {
@@ -352,12 +352,12 @@ fn param_to_column(
     spec: &OpenAPI,
     param: &Parameter,
 ) -> Result<Option<Column>> {
-    let (data, source, pushdown) = match param {
+    let (data, role) = match param {
         Parameter::Path { parameter_data, .. } => {
-            (parameter_data, ColumnSource::PathParam, PushdownKind::Required)
+            (parameter_data, ColumnRole::PathParam)
         }
         Parameter::Query { parameter_data, .. } => {
-            (parameter_data, ColumnSource::QueryParam, PushdownKind::Optional)
+            (parameter_data, ColumnRole::QueryParam)
         }
         _ => return Ok(None),
     };
@@ -378,8 +378,7 @@ fn param_to_column(
         col_type,
         nullable: !data.required,
         description,
-        source,
-        pushdown,
+        role,
         api_name: data.name.clone(),
     }))
 }

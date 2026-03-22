@@ -16,7 +16,7 @@ fn main() {
     // Print table names
     for table in catalog.tables() {
         let required: Vec<_> = table.required_params().map(|c| c.name.as_str()).collect();
-        let response_cols = table.response_columns().count();
+        let response_cols = table.result_columns().count();
         let pushdown_cols = table.pushdown_params().count();
 
         println!(

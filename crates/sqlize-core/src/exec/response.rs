@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::catalog::types::{
-    Column, ColumnName, ColumnSource, ResultSet, Row, Scalar, sanitize_name,
+    Column, ColumnName, ResultSet, Row, Scalar, sanitize_name,
 };
 use crate::error::Result;
 
@@ -26,7 +26,7 @@ pub fn json_to_result_set(
     // controls, not data columns. Keep path params, response fields, and dual-origin.
     let data_columns: Vec<&Column> = columns
         .iter()
-        .filter(|c| !matches!(c.source, ColumnSource::QueryParam))
+        .filter(|c| c.role.appears_in_results())
         .collect();
 
     let col_names: Vec<ColumnName> = data_columns.iter().map(|c| c.name.clone()).collect();
@@ -105,8 +105,7 @@ fn json_value_to_scalar(v: &serde_json::Value) -> Scalar {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::catalog::types::{ColumnSource, PushdownKind};
-    use crate::catalog::types::ColumnType;
+    use crate::catalog::types::{ColumnRole, ColumnType};
 
     fn test_columns() -> Vec<Column> {
         vec![
@@ -115,8 +114,7 @@ mod tests {
                 col_type: ColumnType::String,
                 nullable: false,
                 description: None,
-                source: ColumnSource::PathParam,
-                    pushdown: PushdownKind::Required,
+                role: ColumnRole::PathParam,
                 api_name: "owner".to_owned(),
             },
             Column {
@@ -124,8 +122,7 @@ mod tests {
                 col_type: ColumnType::Integer,
                 nullable: false,
                 description: None,
-                source: ColumnSource::ResponseField,
-                    pushdown: PushdownKind::LocalOnly,
+                role: ColumnRole::ResponseField,
                 api_name: "id".to_owned(),
             },
             Column {
@@ -133,8 +130,7 @@ mod tests {
                 col_type: ColumnType::String,
                 nullable: false,
                 description: None,
-                source: ColumnSource::ResponseField,
-                    pushdown: PushdownKind::LocalOnly,
+                role: ColumnRole::ResponseField,
                 api_name: "title".to_owned(),
             },
             Column {
@@ -142,8 +138,7 @@ mod tests {
                 col_type: ColumnType::String,
                 nullable: true,
                 description: None,
-                source: ColumnSource::ResponseField,
-                    pushdown: PushdownKind::LocalOnly,
+                role: ColumnRole::ResponseField,
                 api_name: "user_login".to_owned(),
             },
         ]
@@ -228,8 +223,7 @@ mod tests {
                 col_type: ColumnType::String,
                 nullable: false,
                 description: None,
-                source: ColumnSource::QueryParamAndResponse,
-                pushdown: PushdownKind::Optional,
+                role: ColumnRole::QueryParamAndResponse,
                 api_name: "state".to_owned(),
             },
             Column {
@@ -237,8 +231,7 @@ mod tests {
                 col_type: ColumnType::String,
                 nullable: false,
                 description: None,
-                source: ColumnSource::ResponseField,
-                    pushdown: PushdownKind::LocalOnly,
+                role: ColumnRole::ResponseField,
                 api_name: "title".to_owned(),
             },
         ];
@@ -268,8 +261,7 @@ mod tests {
                 col_type: ColumnType::String,
                 nullable: false,
                 description: None,
-                source: ColumnSource::PathParam,
-                    pushdown: PushdownKind::Required,
+                role: ColumnRole::PathParam,
                 api_name: "owner".to_owned(),
             },
         ];

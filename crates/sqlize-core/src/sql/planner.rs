@@ -6,7 +6,7 @@ use sqlparser::dialect::GenericDialect;
 use sqlparser::parser::Parser;
 
 use crate::catalog::Catalog;
-use crate::catalog::types::{ColumnName, PushdownKind, TableName, VirtualTable};
+use crate::catalog::types::{ColumnName, TableName, VirtualTable};
 use crate::error::{Error, Result};
 
 use crate::catalog::types::Scalar;
@@ -243,29 +243,26 @@ fn classify_single_condition(
         .find(|c| c.name == col_name);
 
     match column {
-        Some(col) => match col.pushdown {
-            PushdownKind::Required if filter_op == FilterOp::Eq => {
-                let value_str = filter_value_to_string(&filter_value);
-                Ok(ConditionClass::PathParam {
-                    name: col.name.clone(),
-                    value: value_str,
-                })
-            }
-            PushdownKind::Optional if filter_op == FilterOp::Eq => {
-                let param_name = col.api_name.clone();
-                let value_str = filter_value_to_string(&filter_value);
-                Ok(ConditionClass::QueryParam {
-                    api_name: param_name,
-                    value: value_str,
-                })
-            }
-            // Path/query params with non-equality ops become local filters
-            _ => Ok(ConditionClass::LocalFilter(LocalFilter {
-                column: col_name,
-                op: filter_op,
-                value: filter_value,
-            })),
-        },
+        Some(col) if col.role.is_required() && filter_op == FilterOp::Eq => {
+            let value_str = filter_value_to_string(&filter_value);
+            Ok(ConditionClass::PathParam {
+                name: col.name.clone(),
+                value: value_str,
+            })
+        }
+        Some(col) if col.role.is_pushable() && !col.role.is_required() && filter_op == FilterOp::Eq => {
+            let param_name = col.api_name.clone();
+            let value_str = filter_value_to_string(&filter_value);
+            Ok(ConditionClass::QueryParam {
+                api_name: param_name,
+                value: value_str,
+            })
+        }
+        Some(_) => Ok(ConditionClass::LocalFilter(LocalFilter {
+            column: col_name,
+            op: filter_op,
+            value: filter_value,
+        })),
         None => Err(Error::ColumnNotFound {
             table: table.name.clone(),
             column: col_name,
@@ -560,8 +557,7 @@ mod tests {
                     col_type: ColumnType::String,
                     nullable: false,
                     description: None,
-                    source: ColumnSource::PathParam,
-                    pushdown: PushdownKind::Required,
+                    role: ColumnRole::PathParam,
                     api_name: "owner".to_owned(),
                 },
                 Column {
@@ -569,8 +565,7 @@ mod tests {
                     col_type: ColumnType::String,
                     nullable: false,
                     description: None,
-                    source: ColumnSource::PathParam,
-                    pushdown: PushdownKind::Required,
+                    role: ColumnRole::PathParam,
                     api_name: "repo".to_owned(),
                 },
                 Column {
@@ -578,8 +573,7 @@ mod tests {
                     col_type: ColumnType::String,
                     nullable: false,
                     description: None,
-                    source: ColumnSource::QueryParam,
-                    pushdown: PushdownKind::Optional,
+                    role: ColumnRole::QueryParam,
                     api_name: "state".to_owned(),
                 },
                 Column {
@@ -587,8 +581,7 @@ mod tests {
                     col_type: ColumnType::Integer,
                     nullable: false,
                     description: None,
-                    source: ColumnSource::ResponseField,
-                    pushdown: PushdownKind::LocalOnly,
+                    role: ColumnRole::ResponseField,
                     api_name: "id".to_owned(),
                 },
                 Column {
@@ -596,8 +589,7 @@ mod tests {
                     col_type: ColumnType::Integer,
                     nullable: false,
                     description: None,
-                    source: ColumnSource::ResponseField,
-                    pushdown: PushdownKind::LocalOnly,
+                    role: ColumnRole::ResponseField,
                     api_name: "number".to_owned(),
                 },
                 Column {
@@ -605,8 +597,7 @@ mod tests {
                     col_type: ColumnType::String,
                     nullable: false,
                     description: None,
-                    source: ColumnSource::ResponseField,
-                    pushdown: PushdownKind::LocalOnly,
+                    role: ColumnRole::ResponseField,
                     api_name: "title".to_owned(),
                 },
                 Column {
@@ -614,8 +605,7 @@ mod tests {
                     col_type: ColumnType::Timestamp,
                     nullable: false,
                     description: None,
-                    source: ColumnSource::ResponseField,
-                    pushdown: PushdownKind::LocalOnly,
+                    role: ColumnRole::ResponseField,
                     api_name: "created_at".to_owned(),
                 },
             ],
