@@ -46,7 +46,14 @@ Results are returned in [TOON](https://github.com/toon-format/toon) (compact, to
 ## Quickstart
 
 ```sh
-cargo install --path crates/sqlize
+# macOS / Linux
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/Benaiad/sqlize/releases/latest/download/sqlize-installer.sh | sh
+
+# Windows
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/Benaiad/sqlize/releases/latest/download/sqlize-installer.ps1 | iex"
+
+# Or with Cargo
+cargo install sqlize
 ```
 
 Curated minimal specs ship with the repo:
