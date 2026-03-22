@@ -504,7 +504,10 @@ fn explain_source(source: &PlanSource, out: &mut String, indent: usize) {
                 call.table, call.endpoint.method, call.endpoint.path
             ));
             if !call.params.is_empty() {
-                out.push_str(&format!("{pad}  params: {:?}\n", call.params));
+                let params: Vec<String> = call.params.iter()
+                    .map(|(k, v)| format!("{k} = {v}"))
+                    .collect();
+                out.push_str(&format!("{pad}  params: {}\n", params.join(", ")));
             }
         }
     }
