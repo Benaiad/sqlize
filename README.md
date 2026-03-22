@@ -6,8 +6,6 @@ Point sqlize at an OpenAPI spec and query any REST API using SQL. Path parameter
 
 ## How it works
 
-Point sqlize at an OpenAPI spec. It generates virtual SQL tables from the API's endpoints — path parameters become required `WHERE` clauses, query parameters become filterable columns, response fields become the rest. Write SQL, get results.
-
 ```sh
 export SQLIZE_BEARER_ENV_VAR=GITHUB_TOKEN
 sqlize --spec specs/github-minimal.json --format toon
@@ -41,15 +39,15 @@ sqlize> SELECT email, name FROM customers;
 ╰──────────────────────┴────────────────╯
 ```
 
-Results are returned in [TOON](https://github.com/toon-format/toon) — a compact, token-oriented encoding that's 40–50% smaller than JSON.
+Supported SQL: `SELECT`, `WHERE` (with `AND`), `ORDER BY`, `LIMIT`, `OFFSET`, column aliases. No JOINs, subqueries, or aggregations. Read-only — no INSERT/UPDATE/DELETE.
 
-## Install
+Results are returned in [TOON](https://github.com/toon-format/toon) (compact, token-oriented encoding, 40–50% smaller than JSON), JSON, or as a table.
+
+## Quickstart
 
 ```sh
 cargo install --path crates/sqlize
 ```
-
-## Setup
 
 Curated minimal specs ship with the repo:
 
@@ -58,13 +56,6 @@ Curated minimal specs ship with the repo:
 | `specs/github-minimal.json` | 9 | Bearer token | Issues, PRs, commits, releases, repos |
 | `specs/gitlab-minimal.json` | 5 | Bearer token | Projects, issues, MRs, pipelines, members |
 | `specs/stripe-minimal.json` | 5 | Bearer token | Customers, charges, subscriptions, invoices, products |
-
-You can also use full OpenAPI specs (e.g., GitHub's 900+ endpoints):
-
-```sh
-curl -L -o specs/github.json \
-  https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json
-```
 
 Set your API token:
 
@@ -76,25 +67,28 @@ export SQLIZE_BEARER_TOKEN=ghp_...
 export SQLIZE_BEARER_ENV_VAR=GITHUB_TOKEN
 ```
 
-## CLI
+Run it:
 
 ```sh
 sqlize --spec specs/github-minimal.json
 ```
 
-With the full spec, use `--tags` to filter endpoints by their OpenAPI [tag](https://swagger.io/docs/specification/v3_0/grouping-operations-with-tags/):
-
-```sh
-sqlize --spec specs/github.json --tags repos,issues
-```
-
 ```
 sqlize> SHOW TABLES
 sqlize> DESCRIBE issues
-sqlize> SELECT number, title FROM issues WHERE owner = 'rust-lang' AND repo = 'rust' LIMIT 5
+sqlize> SELECT number, title FROM issues WHERE owner = 'rust-lang' AND repo = 'rust' LIMIT 5;
 ```
 
 Output formats: `--format table` (default), `--format toon`, `--format json`.
+
+With full OpenAPI specs, use `--tags` to filter endpoints by their OpenAPI [tag](https://swagger.io/docs/specification/v3_0/grouping-operations-with-tags/):
+
+```sh
+curl -L -o specs/github.json \
+  https://raw.githubusercontent.com/github/rest-api-description/main/descriptions/api.github.com/api.github.com.json
+
+sqlize --spec specs/github.json --tags repos,issues
+```
 
 ## MCP server
 
@@ -124,13 +118,13 @@ LIMIT 10
 
 The planner classifies each `WHERE` condition:
 
-| Condition                  | Classification  | Effect                                                       |
-|----------------------------|-----------------|--------------------------------------------------------------|
-| `owner = 'anthropics'`     | Path parameter  | Substituted into URL: `/repos/anthropics/{repo}/issues`      |
-| `repo = 'claude-code'`     | Path parameter  | Substituted into URL: `/repos/anthropics/claude-code/issues` |
-| `state = 'open'`           | Query parameter | Pushed to API: `?state=open`                                 |
-| `ORDER BY created_at DESC` | Post-processing | Applied locally after fetch                                  |
-| `LIMIT 10`                 | Post-processing | Applied locally after fetch                                  |
+| Condition | Classification | Effect |
+|-----------|---------------|--------|
+| `owner = 'anthropics'` | Path parameter | Substituted into URL: `/repos/anthropics/{repo}/issues` |
+| `repo = 'claude-code'` | Path parameter | Substituted into URL: `/repos/anthropics/claude-code/issues` |
+| `state = 'open'` | Query parameter | Pushed to API: `?state=open` |
+| `ORDER BY created_at DESC` | Post-processing | Applied locally after fetch |
+| `LIMIT 10` | Post-processing | Applied locally after fetch |
 
 Path parameters are required — omitting them fails at query planning, before any HTTP call is made.
 
@@ -155,5 +149,3 @@ Research and competitive analysis in [`research/`](research/).
 ## Status
 
 Research prototype. The core pipeline works end-to-end against live APIs. Not production-hardened.
-
-What's missing: JOINs across tables.
