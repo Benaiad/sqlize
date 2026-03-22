@@ -182,6 +182,35 @@ mod tests {
     }
 
     #[test]
+    fn extra_api_fields_not_in_spec_are_ignored() {
+        // API returns fields the spec doesn't declare — they shouldn't appear
+        let json = serde_json::json!([{
+            "id": 1,
+            "title": "bug",
+            "secret_field": "should not appear",
+            "internal_score": 99,
+            "user": {"login": "alice", "avatar_url": "https://..."}
+        }]);
+        let cols = test_columns();
+        let mut params = HashMap::new();
+        params.insert(ColumnName::new("owner").unwrap(), "test".to_owned());
+
+        let result = json_to_result_set(&json, &cols, &params).unwrap();
+
+        // Only the 4 columns from test_columns() (minus QueryParam ones)
+        let col_names: Vec<&str> = result.columns.iter().map(|c| c.as_str()).collect();
+        assert!(!col_names.contains(&"secret_field"));
+        assert!(!col_names.contains(&"internal_score"));
+        assert!(!col_names.contains(&"user_avatar_url"));
+
+        // Declared columns are present
+        assert!(col_names.contains(&"owner"));
+        assert!(col_names.contains(&"id"));
+        assert!(col_names.contains(&"title"));
+        assert!(col_names.contains(&"user_login"));
+    }
+
+    #[test]
     fn shared_param_response_column_prefers_response_value() {
         // `state` is both a query param (for filtering) and a response field.
         // The response value should win over the param value.
