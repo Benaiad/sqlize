@@ -32,6 +32,21 @@ struct Cli {
 enum Command {
     /// Start the MCP server (stdio transport)
     Mcp,
+    /// Execute a SQL query and print results
+    Query {
+        /// The SQL query to execute
+        sql: String,
+    },
+    /// Show the execution plan for a query
+    Explain {
+        /// The SQL query to explain
+        sql: String,
+    },
+    /// Show table schema (DDL). Omit table name to list all tables.
+    Schema {
+        /// Table name (optional)
+        table: Option<String>,
+    },
 }
 
 fn resolve_bearer_token() -> Option<String> {
@@ -86,6 +101,8 @@ async fn main() -> anyhow::Result<()> {
         bearer_token: resolve_bearer_token(),
     };
 
+    let client = sqlize_core::exec::Client::new();
+
     match cli.command {
         Some(Command::Mcp) => {
             tracing::info!(
@@ -106,6 +123,41 @@ async fn main() -> anyhow::Result<()> {
 
             service.waiting().await?;
         }
+        Some(Command::Query { sql }) => {
+            let plan = sqlize_core::sql::planner::plan_query(&sql, &catalog)
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            let result = sqlize_core::exec::execute(&plan, &auth, &client).await
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+            match cli.format {
+                repl::OutputFormat::Toon => {
+                    println!("{}", sqlize_core::output::result_set_to_toon(&result)
+                        .map_err(|e| anyhow::anyhow!("{e}"))?);
+                }
+                _ => {
+                    println!("{}", sqlize_core::output::result_set_to_json(&result));
+                }
+            }
+        }
+        Some(Command::Explain { sql }) => {
+            let plan = sqlize_core::sql::planner::plan_query(&sql, &catalog)
+                .map_err(|e| anyhow::anyhow!("{e}"))?;
+            print!("{}", sqlize_core::sql::planner::explain(&plan));
+        }
+        Some(Command::Schema { table }) => {
+            match table {
+                Some(name) => {
+                    let table_name = sqlize_core::catalog::types::TableName::new(&name)
+                        .map_err(|e| anyhow::anyhow!("{e}"))?;
+                    let t = catalog.require(&table_name)
+                        .map_err(|e| anyhow::anyhow!("{e}"))?;
+                    print!("{}", sqlize_core::catalog::ddl::table_ddl(t));
+                }
+                None => {
+                    print!("{}", sqlize_core::catalog::ddl::catalog_ddl(&catalog));
+                }
+            }
+        }
         None => {
             eprintln!(
                 "{} — {} tables from {}",
@@ -114,7 +166,6 @@ async fn main() -> anyhow::Result<()> {
                 spec_info.base_url,
             );
 
-            let client = sqlize_core::exec::Client::new();
             repl::run(Arc::new(catalog), auth, client, cli.format).await;
         }
     }
