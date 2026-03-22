@@ -1,3 +1,4 @@
+mod pagination;
 mod postprocess;
 mod response;
 
@@ -66,7 +67,7 @@ async fn execute_api_call(
     let mut is_first_page = true;
 
     while let Some(url) = next_url.take() {
-        let (body, link_next) = fetch_page(client, auth, call, &url, is_first_page).await?;
+        let (body, headers) = fetch_page(client, auth, call, &url, is_first_page).await?;
 
         let data = unwrap_response(&body, &call.endpoint.data_path);
         let page = response::json_to_result_set(data, &call.columns, &param_values)?;
@@ -85,7 +86,13 @@ async fn execute_api_call(
             break;
         }
 
-        next_url = link_next.or_else(|| extract_next_url_from_body(&body));
+        let ctx = pagination::PageContext {
+            headers: &headers,
+            body: &body,
+            data,
+            current_url: &url,
+        };
+        next_url = pagination::next_page(&ctx);
         is_first_page = false;
     }
 
@@ -125,14 +132,14 @@ fn build_param_values(call: &ApiCall) -> HashMap<ColumnName, String> {
     values
 }
 
-/// Fetch a single page. Returns the JSON body and the Link-header next URL.
+/// Fetch a single page. Returns the JSON body and response headers.
 async fn fetch_page(
     client: &Client,
     auth: &AuthConfig,
     call: &ApiCall,
     url: &str,
     is_first_page: bool,
-) -> Result<(serde_json::Value, Option<String>)> {
+) -> Result<(serde_json::Value, reqwest::header::HeaderMap)> {
     let mut request = client
         .get(url)
         .header(ACCEPT, &call.endpoint.accept)
@@ -163,9 +170,10 @@ async fn fetch_page(
     let resp = request.send().await?;
 
     check_rate_limit(&resp);
-    let link_next = parse_link_next(resp.headers());
 
     let status = resp.status();
+    let headers = resp.headers().clone();
+
     if !status.is_success() {
         let body = resp.text().await.unwrap_or_default();
         return Err(Error::ApiError {
@@ -176,7 +184,7 @@ async fn fetch_page(
     }
 
     let body = resp.json().await?;
-    Ok((body, link_next))
+    Ok((body, headers))
 }
 
 fn check_rate_limit(resp: &reqwest::Response) {
@@ -201,92 +209,3 @@ fn unwrap_response<'a>(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Pagination detection
-// ---------------------------------------------------------------------------
-
-/// Parse `Link` header for `rel="next"` URL (RFC 8288).
-fn parse_link_next(headers: &reqwest::header::HeaderMap) -> Option<String> {
-    let link = headers.get("link")?.to_str().ok()?;
-    for part in link.split(',') {
-        let part = part.trim();
-        if part.contains("rel=\"next\"") {
-            let url = part
-                .split(';')
-                .next()?
-                .trim()
-                .strip_prefix('<')?
-                .strip_suffix('>')?;
-            return Some(url.to_owned());
-        }
-    }
-    None
-}
-
-/// Check response body for common "next page" URL fields.
-fn extract_next_url_from_body(body: &serde_json::Value) -> Option<String> {
-    let obj = body.as_object()?;
-    for key in ["next", "next_url", "next_page", "next_page_url"] {
-        if let Some(serde_json::Value::String(url)) = obj.get(key) {
-            if url.starts_with("http") {
-                return Some(url.clone());
-            }
-        }
-    }
-    None
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn parse_github_link_header() {
-        let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert(
-            "link",
-            r#"<https://api.github.com/repos/rust-lang/rust/issues?page=2>; rel="next", <https://api.github.com/repos/rust-lang/rust/issues?page=34>; rel="last""#
-                .parse()
-                .unwrap(),
-        );
-        let next = parse_link_next(&headers);
-        assert_eq!(
-            next.as_deref(),
-            Some("https://api.github.com/repos/rust-lang/rust/issues?page=2")
-        );
-    }
-
-    #[test]
-    fn parse_link_header_no_next() {
-        let mut headers = reqwest::header::HeaderMap::new();
-        headers.insert(
-            "link",
-            r#"<https://example.com?page=1>; rel="prev""#
-                .parse()
-                .unwrap(),
-        );
-        assert!(parse_link_next(&headers).is_none());
-    }
-
-    #[test]
-    fn extract_next_url_from_json() {
-        let body = serde_json::json!({
-            "results": [{"id": 1}],
-            "next": "https://api.example.com/items?page=2",
-            "count": 42
-        });
-        assert_eq!(
-            extract_next_url_from_body(&body).as_deref(),
-            Some("https://api.example.com/items?page=2")
-        );
-    }
-
-    #[test]
-    fn no_next_url_when_null() {
-        let body = serde_json::json!({
-            "results": [{"id": 1}],
-            "next": null
-        });
-        assert!(extract_next_url_from_body(&body).is_none());
-    }
-}
