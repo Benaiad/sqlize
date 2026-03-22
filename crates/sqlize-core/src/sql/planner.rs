@@ -9,7 +9,7 @@ use crate::catalog::Catalog;
 use crate::catalog::types::{ColumnName, PushdownKind, TableName, VirtualTable};
 use crate::error::{Error, Result};
 
-use crate::catalog::types::Value;
+use crate::catalog::types::Scalar;
 use super::plan::{
     ApiCall, FilterOp, LocalFilter, OrderByItem, PostProcessing, Projection,
     QueryPlan, PlanSource,
@@ -215,7 +215,7 @@ fn classify_single_condition(
         return Ok(ConditionClass::LocalFilter(LocalFilter {
             column: col_name,
             op: FilterOp::IsNull,
-            value: Value::Null,
+            value: Scalar::Null,
         }));
     }
     if let Expr::IsNotNull(inner) = expr {
@@ -223,7 +223,7 @@ fn classify_single_condition(
         return Ok(ConditionClass::LocalFilter(LocalFilter {
             column: col_name,
             op: FilterOp::IsNotNull,
-            value: Value::Null,
+            value: Scalar::Null,
         }));
     }
 
@@ -307,23 +307,23 @@ fn convert_op(op: &ast::BinaryOperator) -> Result<FilterOp> {
     }
 }
 
-fn extract_value(expr: &Expr) -> Result<Value> {
+fn extract_value(expr: &Expr) -> Result<Scalar> {
     match expr {
         Expr::Value(v) => match &v.value {
             SqlValue::SingleQuotedString(s) | SqlValue::DoubleQuotedString(s) => {
-                Ok(Value::String(s.clone()))
+                Ok(Scalar::String(s.clone()))
             }
             SqlValue::Number(n, _) => {
                 if let Ok(i) = n.parse::<i64>() {
-                    Ok(Value::Integer(i))
+                    Ok(Scalar::Integer(i))
                 } else if let Ok(f) = n.parse::<f64>() {
-                    Ok(Value::Float(f))
+                    Ok(Scalar::Float(f))
                 } else {
                     Err(Error::UnsupportedSql("unparseable number".to_owned()))
                 }
             }
-            SqlValue::Boolean(b) => Ok(Value::Boolean(*b)),
-            SqlValue::Null => Ok(Value::Null),
+            SqlValue::Boolean(b) => Ok(Scalar::Boolean(*b)),
+            SqlValue::Null => Ok(Scalar::Null),
             _ => Err(Error::UnsupportedSql("unsupported value type in WHERE".to_owned())),
         },
         Expr::Identifier(ident) => Err(Error::UnsupportedSql(
@@ -339,14 +339,14 @@ fn extract_value(expr: &Expr) -> Result<Value> {
     }
 }
 
-fn filter_value_to_string(v: &Value) -> String {
+fn filter_value_to_string(v: &Scalar) -> String {
     match v {
-        Value::String(s) => s.clone(),
-        Value::Integer(i) => i.to_string(),
-        Value::Float(f) => f.to_string(),
-        Value::Boolean(b) => b.to_string(),
-        Value::Null => String::new(),
-        Value::Json(j) => j.to_string(),
+        Scalar::String(s) => s.clone(),
+        Scalar::Integer(i) => i.to_string(),
+        Scalar::Float(f) => f.to_string(),
+        Scalar::Boolean(b) => b.to_string(),
+        Scalar::Null => String::new(),
+        Scalar::Json(j) => j.to_string(),
     }
 }
 

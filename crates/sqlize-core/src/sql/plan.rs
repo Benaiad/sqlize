@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::catalog::types::{ApiEndpoint, ColumnName, TableName, Value};
+use crate::catalog::types::{ApiEndpoint, ColumnName, Scalar, TableName};
 
 /// The output of the query planner: a recipe for executing a SQL query.
 #[derive(Debug)]
@@ -58,7 +58,7 @@ pub enum Projection {
 pub struct LocalFilter {
     pub(crate) column: ColumnName,
     pub(crate) op: FilterOp,
-    pub(crate) value: Value,
+    pub(crate) value: Scalar,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -14,7 +14,7 @@ use tabled::settings::{self, Width};
 
 use sqlize_core::catalog::Catalog;
 use sqlize_core::catalog::ddl::{catalog_ddl, table_ddl};
-use sqlize_core::catalog::types::{ResultSet, TableName, Value};
+use sqlize_core::catalog::types::{ResultSet, Scalar, TableName};
 use sqlize_core::exec::{AuthConfig, Client, execute};
 use sqlize_core::output::{result_set_to_json, result_set_to_toon};
 use sqlize_core::sql::planner::{explain, plan_query};
@@ -485,14 +485,14 @@ fn print_table(builder: Builder) {
     println!("{tbl}");
 }
 
-fn format_value(v: &Value) -> String {
+fn format_value(v: &Scalar) -> String {
     match v {
-        Value::Null => "NULL".to_owned(),
-        Value::String(s) => s.clone(),
-        Value::Integer(n) => n.to_string(),
-        Value::Float(n) => format!("{n:.2}"),
-        Value::Boolean(b) => b.to_string(),
-        Value::Json(j) => j.to_string(),
+        Scalar::Null => "NULL".to_owned(),
+        Scalar::String(s) => s.clone(),
+        Scalar::Integer(n) => n.to_string(),
+        Scalar::Float(n) => format!("{n:.2}"),
+        Scalar::Boolean(b) => b.to_string(),
+        Scalar::Json(j) => j.to_string(),
     }
 }
 

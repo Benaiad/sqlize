@@ -1,4 +1,4 @@
-use crate::catalog::types::{ColumnName, ResultSet, Row, Value};
+use crate::catalog::types::{ColumnName, ResultSet, Row, Scalar};
 use crate::sql::plan::{FilterOp, LocalFilter, OrderByItem, PostProcessing, Projection};
 
 /// Apply post-processing steps to a result set in place.
@@ -32,8 +32,8 @@ fn row_matches_filter(row: &Row, columns: &[ColumnName], filter: &LocalFilter) -
     let value = &row.values()[idx];
 
     match filter.op {
-        FilterOp::IsNull => matches!(value, Value::Null),
-        FilterOp::IsNotNull => !matches!(value, Value::Null),
+        FilterOp::IsNull => matches!(value, Scalar::Null),
+        FilterOp::IsNotNull => !matches!(value, Scalar::Null),
         FilterOp::Eq => value_eq(value, &filter.value),
         FilterOp::NotEq => !value_eq(value, &filter.value),
         FilterOp::Lt => value_cmp(value, &filter.value).is_some_and(|o| o.is_lt()),
@@ -44,27 +44,27 @@ fn row_matches_filter(row: &Row, columns: &[ColumnName], filter: &LocalFilter) -
     }
 }
 
-fn value_eq(row_val: &Value, filter_val: &Value) -> bool {
+fn value_eq(row_val: &Scalar, filter_val: &Scalar) -> bool {
     match (row_val, filter_val) {
-        (Value::String(a), Value::String(b)) => a == b,
-        (Value::Integer(a), Value::Integer(b)) => a == b,
-        (Value::Float(a), Value::Float(b)) => (*a - *b).abs() < f64::EPSILON,
-        (Value::Boolean(a), Value::Boolean(b)) => a == b,
-        (Value::Null, Value::Null) => true,
+        (Scalar::String(a), Scalar::String(b)) => a == b,
+        (Scalar::Integer(a), Scalar::Integer(b)) => a == b,
+        (Scalar::Float(a), Scalar::Float(b)) => (*a - *b).abs() < f64::EPSILON,
+        (Scalar::Boolean(a), Scalar::Boolean(b)) => a == b,
+        (Scalar::Null, Scalar::Null) => true,
         // Cross-type comparisons: integer as string
-        (Value::Integer(a), Value::String(b)) => a.to_string() == *b,
-        (Value::String(a), Value::Integer(b)) => a.parse::<i64>().ok() == Some(*b),
+        (Scalar::Integer(a), Scalar::String(b)) => a.to_string() == *b,
+        (Scalar::String(a), Scalar::Integer(b)) => a.parse::<i64>().ok() == Some(*b),
         _ => false,
     }
 }
 
-fn value_cmp(row_val: &Value, filter_val: &Value) -> Option<std::cmp::Ordering> {
+fn value_cmp(row_val: &Scalar, filter_val: &Scalar) -> Option<std::cmp::Ordering> {
     match (row_val, filter_val) {
-        (Value::Integer(a), Value::Integer(b)) => Some(a.cmp(b)),
-        (Value::Float(a), Value::Float(b)) => a.partial_cmp(b),
-        (Value::String(a), Value::String(b)) => Some(a.cmp(b)),
-        (Value::Integer(a), Value::Float(b)) => (*a as f64).partial_cmp(b),
-        (Value::Float(a), Value::Integer(b)) => a.partial_cmp(&(*b as f64)),
+        (Scalar::Integer(a), Scalar::Integer(b)) => Some(a.cmp(b)),
+        (Scalar::Float(a), Scalar::Float(b)) => a.partial_cmp(b),
+        (Scalar::String(a), Scalar::String(b)) => Some(a.cmp(b)),
+        (Scalar::Integer(a), Scalar::Float(b)) => (*a as f64).partial_cmp(b),
+        (Scalar::Float(a), Scalar::Integer(b)) => a.partial_cmp(&(*b as f64)),
         _ => None,
     }
 }
@@ -102,15 +102,15 @@ fn apply_order_by(order_by: &[OrderByItem], result: &mut ResultSet) {
     });
 }
 
-fn compare_values(a: &Value, b: &Value) -> std::cmp::Ordering {
+fn compare_values(a: &Scalar, b: &Scalar) -> std::cmp::Ordering {
     match (a, b) {
-        (Value::Null, Value::Null) => std::cmp::Ordering::Equal,
-        (Value::Null, _) => std::cmp::Ordering::Greater, // NULLs sort last
-        (_, Value::Null) => std::cmp::Ordering::Less,
-        (Value::Integer(a), Value::Integer(b)) => a.cmp(b),
-        (Value::Float(a), Value::Float(b)) => a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
-        (Value::String(a), Value::String(b)) => a.cmp(b),
-        (Value::Boolean(a), Value::Boolean(b)) => a.cmp(b),
+        (Scalar::Null, Scalar::Null) => std::cmp::Ordering::Equal,
+        (Scalar::Null, _) => std::cmp::Ordering::Greater, // NULLs sort last
+        (_, Scalar::Null) => std::cmp::Ordering::Less,
+        (Scalar::Integer(a), Scalar::Integer(b)) => a.cmp(b),
+        (Scalar::Float(a), Scalar::Float(b)) => a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal),
+        (Scalar::String(a), Scalar::String(b)) => a.cmp(b),
+        (Scalar::Boolean(a), Scalar::Boolean(b)) => a.cmp(b),
         _ => std::cmp::Ordering::Equal,
     }
 }
@@ -193,9 +193,9 @@ mod tests {
                 ColumnName::new("age").unwrap(),
             ],
             rows: vec![
-                Row::new(vec![Value::Integer(1), Value::String("alice".into()), Value::Integer(30)]),
-                Row::new(vec![Value::Integer(2), Value::String("bob".into()), Value::Integer(25)]),
-                Row::new(vec![Value::Integer(3), Value::String("charlie".into()), Value::Integer(35)]),
+                Row::new(vec![Scalar::Integer(1), Scalar::String("alice".into()), Scalar::Integer(30)]),
+                Row::new(vec![Scalar::Integer(2), Scalar::String("bob".into()), Scalar::Integer(25)]),
+                Row::new(vec![Scalar::Integer(3), Scalar::String("charlie".into()), Scalar::Integer(35)]),
             ],
         }
     }
@@ -206,11 +206,11 @@ mod tests {
         let filters = vec![LocalFilter {
             column: ColumnName::new("name").unwrap(),
             op: FilterOp::Eq,
-            value: Value::String("bob".into()),
+            value: Scalar::String("bob".into()),
         }];
         apply_local_filters(&filters, &mut result);
         assert_eq!(result.rows.len(), 1);
-        assert_eq!(result.rows[0].values()[0], Value::Integer(2));
+        assert_eq!(result.rows[0].values()[0], Scalar::Integer(2));
     }
 
     #[test]
@@ -219,7 +219,7 @@ mod tests {
         let filters = vec![LocalFilter {
             column: ColumnName::new("age").unwrap(),
             op: FilterOp::Gt,
-            value: Value::Integer(28),
+            value: Scalar::Integer(28),
         }];
         apply_local_filters(&filters, &mut result);
         assert_eq!(result.rows.len(), 2); // alice (30) and charlie (35)
@@ -233,8 +233,8 @@ mod tests {
             descending: true,
         }];
         apply_order_by(&order, &mut result);
-        assert_eq!(result.rows[0].values()[2], Value::Integer(35)); // charlie first
-        assert_eq!(result.rows[2].values()[2], Value::Integer(25)); // bob last
+        assert_eq!(result.rows[0].values()[2], Scalar::Integer(35)); // charlie first
+        assert_eq!(result.rows[2].values()[2], Scalar::Integer(25)); // bob last
     }
 
     #[test]
@@ -243,7 +243,7 @@ mod tests {
         apply_offset(Some(1), &mut result);
         apply_limit(Some(1), &mut result);
         assert_eq!(result.rows.len(), 1);
-        assert_eq!(result.rows[0].values()[0], Value::Integer(2)); // bob
+        assert_eq!(result.rows[0].values()[0], Scalar::Integer(2)); // bob
     }
 
     #[test]

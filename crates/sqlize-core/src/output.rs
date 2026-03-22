@@ -1,7 +1,7 @@
 use serde_json::{Map, Value as JsonValue};
 use toon_format::{EncodeOptions, encode_array};
 
-use crate::catalog::types::{ResultSet, Value};
+use crate::catalog::types::{ResultSet, Scalar};
 use crate::error::{Error, Result};
 
 /// Format a `ResultSet` as TOON — a compact, token-efficient encoding
@@ -38,14 +38,14 @@ fn result_set_to_json_value(result: &ResultSet) -> JsonValue {
     JsonValue::Array(rows)
 }
 
-fn value_to_json(v: &Value) -> JsonValue {
+fn value_to_json(v: &Scalar) -> JsonValue {
     match v {
-        Value::Null => JsonValue::Null,
-        Value::String(s) => JsonValue::String(s.clone()),
-        Value::Integer(n) => serde_json::json!(n),
-        Value::Float(n) => serde_json::json!(n),
-        Value::Boolean(b) => JsonValue::Bool(*b),
-        Value::Json(j) => j.clone(),
+        Scalar::Null => JsonValue::Null,
+        Scalar::String(s) => JsonValue::String(s.clone()),
+        Scalar::Integer(n) => serde_json::json!(n),
+        Scalar::Float(n) => serde_json::json!(n),
+        Scalar::Boolean(b) => JsonValue::Bool(*b),
+        Scalar::Json(j) => j.clone(),
     }
 }
 
@@ -63,19 +63,19 @@ mod tests {
             ],
             rows: vec![
                 Row::new(vec![
-                    Value::Integer(1),
-                    Value::String("Fix bug".into()),
-                    Value::String("open".into()),
+                    Scalar::Integer(1),
+                    Scalar::String("Fix bug".into()),
+                    Scalar::String("open".into()),
                 ]),
                 Row::new(vec![
-                    Value::Integer(2),
-                    Value::String("Add feature".into()),
-                    Value::String("closed".into()),
+                    Scalar::Integer(2),
+                    Scalar::String("Add feature".into()),
+                    Scalar::String("closed".into()),
                 ]),
                 Row::new(vec![
-                    Value::Integer(3),
-                    Value::String("Refactor module".into()),
-                    Value::String("open".into()),
+                    Scalar::Integer(3),
+                    Scalar::String("Refactor module".into()),
+                    Scalar::String("open".into()),
                 ]),
             ],
         }

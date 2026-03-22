@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::catalog::types::{
-    Column, ColumnName, ColumnSource, ResultSet, Row, Value, sanitize_name,
+    Column, ColumnName, ColumnSource, ResultSet, Row, Scalar, sanitize_name,
 };
 use crate::error::Result;
 
@@ -47,7 +47,7 @@ fn extract_row(
     param_values: &HashMap<ColumnName, String>,
 ) -> Row {
     let Some(map) = obj.as_object() else {
-        return Row::new(vec![Value::Null; columns.len()]);
+        return Row::new(vec![Scalar::Null; columns.len()]);
     };
 
     // Build a flat lookup: "sanitized_key" → json value (one level of flattening)
@@ -70,35 +70,35 @@ fn extract_row(
             // Try JSON response first — handles fields like `state` that are
             // both a query param and a response field.
             if let Some(v) = flat.get(col.name.as_str()) {
-                return json_value_to_value(v);
+                return json_value_to_scalar(v);
             }
             // Fall back to param values for path/query params not in the response
             // (e.g., `owner` and `repo` which are URL segments, not response fields).
             if let Some(v) = param_values.get(&col.name) {
-                return Value::String(v.clone());
+                return Scalar::String(v.clone());
             }
-            Value::Null
+            Scalar::Null
         })
         .collect();
 
     Row::new(values)
 }
 
-fn json_value_to_value(v: &serde_json::Value) -> Value {
+fn json_value_to_scalar(v: &serde_json::Value) -> Scalar {
     match v {
-        serde_json::Value::Null => Value::Null,
-        serde_json::Value::Bool(b) => Value::Boolean(*b),
+        serde_json::Value::Null => Scalar::Null,
+        serde_json::Value::Bool(b) => Scalar::Boolean(*b),
         serde_json::Value::Number(n) => {
             if let Some(i) = n.as_i64() {
-                Value::Integer(i)
+                Scalar::Integer(i)
             } else if let Some(f) = n.as_f64() {
-                Value::Float(f)
+                Scalar::Float(f)
             } else {
-                Value::String(n.to_string())
+                Scalar::String(n.to_string())
             }
         }
-        serde_json::Value::String(s) => Value::String(s.clone()),
-        other => Value::Json(other.clone()),
+        serde_json::Value::String(s) => Scalar::String(s.clone()),
+        other => Scalar::Json(other.clone()),
     }
 }
 
@@ -165,11 +165,11 @@ mod tests {
         assert_eq!(result.columns[0].as_str(), "owner");
         assert_eq!(result.rows.len(), 2);
         // owner injected from params
-        assert_eq!(result.rows[0].values()[0], Value::String("rust-lang".into()));
+        assert_eq!(result.rows[0].values()[0], Scalar::String("rust-lang".into()));
         // response fields extracted
-        assert_eq!(result.rows[0].values()[1], Value::Integer(1));
-        assert_eq!(result.rows[0].values()[2], Value::String("bug".into()));
-        assert_eq!(result.rows[0].values()[3], Value::String("alice".into()));
+        assert_eq!(result.rows[0].values()[1], Scalar::Integer(1));
+        assert_eq!(result.rows[0].values()[2], Scalar::String("bug".into()));
+        assert_eq!(result.rows[0].values()[3], Scalar::String("alice".into()));
     }
 
     #[test]
@@ -185,8 +185,8 @@ mod tests {
         let json = serde_json::json!([{"id": 1}]);
         let cols = test_columns();
         let result = json_to_result_set(&json, &cols, &HashMap::new()).unwrap();
-        assert_eq!(result.rows[0].values()[2], Value::Null); // title missing
-        assert_eq!(result.rows[0].values()[3], Value::Null); // user_login missing
+        assert_eq!(result.rows[0].values()[2], Scalar::Null); // title missing
+        assert_eq!(result.rows[0].values()[3], Scalar::Null); // user_login missing
     }
 
     #[test]
@@ -254,9 +254,9 @@ mod tests {
         let result = json_to_result_set(&json, &cols, &params).unwrap();
 
         // First row: state from JSON is "open" (matches filter)
-        assert_eq!(result.rows[0].values()[0], Value::String("open".into()));
+        assert_eq!(result.rows[0].values()[0], Scalar::String("open".into()));
         // Second row: state from JSON is "closed" (differs from filter — response wins)
-        assert_eq!(result.rows[1].values()[0], Value::String("closed".into()));
+        assert_eq!(result.rows[1].values()[0], Scalar::String("closed".into()));
     }
 
     #[test]
@@ -279,6 +279,6 @@ mod tests {
         params.insert(ColumnName::new("owner").unwrap(), "rust-lang".to_owned());
 
         let result = json_to_result_set(&json, &cols, &params).unwrap();
-        assert_eq!(result.rows[0].values()[0], Value::String("rust-lang".into()));
+        assert_eq!(result.rows[0].values()[0], Scalar::String("rust-lang".into()));
     }
 }

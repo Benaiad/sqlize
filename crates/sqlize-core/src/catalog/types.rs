@@ -349,9 +349,9 @@ pub fn truncate_str(s: &str, max_chars: usize) -> String {
 // Result types
 // ---------------------------------------------------------------------------
 
-/// A single value in a result row.
+/// A single scalar value in a result row.
 #[derive(Debug, Clone, PartialEq)]
-pub enum Value {
+pub enum Scalar {
     Null,
     String(String),
     Integer(i64),
@@ -360,7 +360,7 @@ pub enum Value {
     Json(serde_json::Value),
 }
 
-impl fmt::Display for Value {
+impl fmt::Display for Scalar {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Null => write!(f, "NULL"),
@@ -375,14 +375,14 @@ impl fmt::Display for Value {
 
 /// A row of values, ordered to match `ResultSet.columns`.
 #[derive(Debug, Clone)]
-pub struct Row(Vec<Value>);
+pub struct Row(Vec<Scalar>);
 
 impl Row {
-    pub fn new(values: Vec<Value>) -> Self {
+    pub fn new(values: Vec<Scalar>) -> Self {
         Self(values)
     }
 
-    pub fn get(&self, idx: usize) -> Option<&Value> {
+    pub fn get(&self, idx: usize) -> Option<&Scalar> {
         self.0.get(idx)
     }
 
@@ -390,7 +390,7 @@ impl Row {
         self.0.len()
     }
 
-    pub fn values(&self) -> &[Value] {
+    pub fn values(&self) -> &[Scalar] {
         &self.0
     }
 }
