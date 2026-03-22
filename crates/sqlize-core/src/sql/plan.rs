@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::catalog::types::{ApiEndpoint, ApiParamName, Column, ColumnName, Scalar, TableName};
+use crate::catalog::types::{ApiEndpoint, ApiParamName, Column, ColumnName, Scalar};
 
 /// The output of the query planner: a recipe for executing a SQL query.
 #[derive(Debug)]
@@ -18,7 +18,6 @@ pub enum PlanSource {
 /// A single API call to execute.
 #[derive(Debug)]
 pub struct ApiCall {
-    pub(crate) table: TableName,
     pub(crate) endpoint: ApiEndpoint,
     /// Column metadata from the resolved table.
     pub(crate) columns: Vec<Column>,

@@ -343,7 +343,6 @@ fn validate_required_params(
 
 fn build_api_call(table: &VirtualTable, classified: &ClassifiedConditions) -> ApiCall {
     ApiCall {
-        table: table.name.clone(),
         endpoint: table.endpoint.clone(),
         columns: table.columns.clone(),
         params: classified.params.clone(),
@@ -499,28 +498,37 @@ fn explain_source(source: &PlanSource, out: &mut String, indent: usize) {
     let pad = " ".repeat(indent);
     match source {
         PlanSource::ApiCall(call) => {
-            out.push_str(&format!(
-                "{pad}ApiCall: {} {} {}\n",
-                call.table, call.endpoint.method, call.endpoint.path
-            ));
-            let mut path_params = Vec::new();
-            let mut query_params = Vec::new();
-            for col in &call.columns {
-                let key = crate::catalog::types::ApiParamName::new(col.api_param_key());
-                if let Some(val) = call.params.get(&key) {
-                    let entry = format!("{} = {val}", col.name);
-                    if col.role.is_required() {
-                        path_params.push(entry);
-                    } else if col.role.is_pushable() {
-                        query_params.push(entry);
-                    }
-                }
-            }
-            if !path_params.is_empty() {
-                out.push_str(&format!("{pad}  path: {}\n", path_params.join(", ")));
-            }
-            if !query_params.is_empty() {
-                out.push_str(&format!("{pad}  query: {}\n", query_params.join(", ")));
+            // Resolve the URL with actual param values
+            let url = call.endpoint.url(|placeholder| {
+                call.columns.iter()
+                    .find(|c| c.api_param_key() == placeholder)
+                    .and_then(|c| {
+                        let key = crate::catalog::types::ApiParamName::new(c.api_param_key());
+                        match call.params.get(&key)? {
+                            crate::catalog::types::Scalar::String(s) => Some(s.as_str()),
+                            _ => None,
+                        }
+                    })
+            });
+
+            let base = url
+                .as_deref()
+                .unwrap_or(call.endpoint.path.as_str());
+
+            // Collect query params
+            let query: Vec<String> = call.columns.iter()
+                .filter(|c| c.role.is_pushable() && !c.role.is_required())
+                .filter_map(|c| {
+                    let key = crate::catalog::types::ApiParamName::new(c.api_param_key());
+                    let val = call.params.get(&key)?;
+                    Some(format!("{}={val}", c.api_param_key()))
+                })
+                .collect();
+
+            if query.is_empty() {
+                out.push_str(&format!("{pad}{} {base}\n", call.endpoint.method));
+            } else {
+                out.push_str(&format!("{pad}{} {base}?{}\n", call.endpoint.method, query.join("&")));
             }
         }
     }
@@ -669,9 +677,7 @@ mod tests {
         ).unwrap();
 
         let output = explain(&plan);
-        assert!(output.contains("ApiCall: issues GET /repos/{owner}/{repo}/issues"));
-        assert!(output.contains("path: owner = anthropics"));
-        assert!(output.contains("query: state = open"));
+        assert!(output.contains("GET https://api.github.com/repos/anthropics/claude-code/issues?state=open"));
         assert!(output.contains("Limit: 5"));
     }
 
