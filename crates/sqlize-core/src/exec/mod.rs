@@ -6,7 +6,7 @@ use std::collections::HashMap;
 pub use reqwest::Client;
 use reqwest::header::{ACCEPT, AUTHORIZATION, USER_AGENT};
 
-use crate::catalog::types::{ApiParamName, Column, ColumnName, ResultSet, Row};
+use crate::catalog::types::{ApiParamName, ColumnName, ResultSet, Row, Scalar};
 use crate::error::{Error, Result};
 use crate::sql::plan::{ApiCall, PlanSource, QueryPlan};
 
@@ -51,7 +51,7 @@ async fn execute_api_call(
     limit: Option<u64>,
 ) -> Result<ResultSet> {
     let first_url = resolve_url(call)?;
-    let param_values = build_param_values(call, &call.columns);
+    let param_values = build_param_values(call);
 
     // Only paginate when the user explicitly asks for rows via LIMIT.
     // Without LIMIT, return only the first page to avoid hammering APIs.
@@ -94,24 +94,32 @@ async fn execute_api_call(
 
 fn resolve_url(call: &ApiCall) -> Result<String> {
     call.endpoint
-        .url(|name| {
-            call.path_params
-                .iter()
-                .find(|(k, _)| k.as_str() == name)
-                .map(|(_, v)| v.as_str())
+        .url(|placeholder| {
+            // Find the column whose API name matches this URL placeholder
+            call.columns.iter()
+                .find(|c| c.api_param_key() == placeholder)
+                .and_then(|c| {
+                    let key = ApiParamName::new(c.api_param_key());
+                    match call.params.get(&key)? {
+                        Scalar::String(s) => Some(s.as_str()),
+                        _ => None,
+                    }
+                })
         })
         .ok_or(Error::UnresolvedUrl)
 }
 
-fn build_param_values(
-    call: &ApiCall,
-    columns: &[Column],
-) -> HashMap<ColumnName, String> {
-    let mut values: HashMap<ColumnName, String> = call.path_params.clone();
-    for col in columns.iter().filter(|c| c.role.is_pushable() && !c.role.is_required()) {
-        let param_key = ApiParamName::new(col.api_param_key());
-        if let Some(val) = call.query_params.get(&param_key) {
-            values.insert(col.name.clone(), val.clone());
+/// Build a map from column name → string value for response row injection.
+/// This lets the response builder inject param values (like `owner`) into
+/// result rows for columns that don't appear in the API response body.
+fn build_param_values(call: &ApiCall) -> HashMap<ColumnName, String> {
+    let mut values = HashMap::new();
+    for col in &call.columns {
+        if col.role.is_pushable() {
+            let key = ApiParamName::new(col.api_param_key());
+            if let Some(scalar) = call.params.get(&key) {
+                values.insert(col.name.clone(), scalar.to_string());
+            }
         }
     }
     values
@@ -135,12 +143,19 @@ async fn fetch_page(
     }
 
     if is_first_page {
-        let query_params: Vec<(&str, &str)> = call
-            .query_params
-            .iter()
+        // Extract query params (non-path pushable params) and stringify for HTTP
+        let query_params: Vec<(String, String)> = call.columns.iter()
+            .filter(|c| c.role.is_pushable() && !c.role.is_required())
+            .filter_map(|c| {
+                let key = ApiParamName::new(c.api_param_key());
+                let val = call.params.get(&key)?;
+                Some((key.as_str().to_owned(), val.to_string()))
+            })
+            .collect();
+        let query_refs: Vec<(&str, &str)> = query_params.iter()
             .map(|(k, v)| (k.as_str(), v.as_str()))
             .collect();
-        request = request.query(&query_params);
+        request = request.query(&query_refs);
     }
 
     tracing::debug!(%url, page = !is_first_page, "executing API call");

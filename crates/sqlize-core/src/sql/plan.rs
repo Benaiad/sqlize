@@ -20,13 +20,12 @@ pub enum PlanSource {
 pub struct ApiCall {
     pub(crate) table: TableName,
     pub(crate) endpoint: ApiEndpoint,
-    /// Column metadata from the resolved table, carried forward so the executor
-    /// doesn't need to re-look-up the table in the catalog.
+    /// Column metadata from the resolved table.
     pub(crate) columns: Vec<Column>,
-    /// Path parameter values extracted from WHERE (e.g., owner = 'anthropics').
-    pub(crate) path_params: HashMap<ColumnName, String>,
-    /// Query parameter values to push down to the API (e.g., state = 'open').
-    pub(crate) query_params: HashMap<ApiParamName, String>,
+    /// Parameter values extracted from WHERE clauses. The executor uses each
+    /// column's `ColumnRole` to determine whether a param goes into the URL
+    /// path or the query string.
+    pub(crate) params: HashMap<ApiParamName, Scalar>,
 }
 
 /// Operations applied locally after fetching rows from the API.

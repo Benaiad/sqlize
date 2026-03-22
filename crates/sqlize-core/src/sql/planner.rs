@@ -138,10 +138,8 @@ fn resolve_table_name(name: &str) -> Result<TableName> {
 
 /// The result of classifying WHERE conditions against a table's column origins.
 struct ClassifiedConditions {
-    /// Path parameter values (must all be present for the API call).
-    path_params: std::collections::HashMap<ColumnName, String>,
-    /// Query parameters to push down to the API.
-    query_params: std::collections::HashMap<ApiParamName, String>,
+    /// Pushed parameters (path and query). Keyed by API param name.
+    params: std::collections::HashMap<ApiParamName, Scalar>,
     /// Conditions that must be evaluated locally after fetching.
     local_filters: Vec<LocalFilter>,
 }
@@ -167,24 +165,18 @@ fn classify_conditions(
     conditions: &[&Expr],
     table: &VirtualTable,
 ) -> Result<ClassifiedConditions> {
-    let mut path_params = std::collections::HashMap::new();
-    let mut query_params = std::collections::HashMap::new();
+    let mut params = std::collections::HashMap::new();
     let mut local_filters = Vec::new();
 
     for expr in conditions {
         match classify_single_condition(expr, table) {
-            Ok(ConditionClass::PathParam { name, value }) => {
-                path_params.insert(name, value);
-            }
-            Ok(ConditionClass::QueryParam { api_name, value }) => {
-                query_params.insert(api_name, value);
+            Ok(ConditionClass::Param { api_name, value }) => {
+                params.insert(api_name, value);
             }
             Ok(ConditionClass::LocalFilter(f)) => {
                 local_filters.push(f);
             }
             Err(_) => {
-                // If we can't classify a condition, treat the whole expression
-                // as something we can't handle rather than silently dropping it.
                 return Err(Error::UnsupportedSql(
                     "unsupported WHERE condition (only column = value with AND supported)".to_owned(),
                 ));
@@ -193,15 +185,13 @@ fn classify_conditions(
     }
 
     Ok(ClassifiedConditions {
-        path_params,
-        query_params,
+        params,
         local_filters,
     })
 }
 
 enum ConditionClass {
-    PathParam { name: ColumnName, value: String },
-    QueryParam { api_name: ApiParamName, value: String },
+    Param { api_name: ApiParamName, value: Scalar },
     LocalFilter(LocalFilter),
 }
 
@@ -243,18 +233,10 @@ fn classify_single_condition(
         .find(|c| c.name == col_name);
 
     match column {
-        Some(col) if col.role.is_required() && filter_op == FilterOp::Eq => {
-            let value_str = filter_value_to_string(&filter_value);
-            Ok(ConditionClass::PathParam {
-                name: col.name.clone(),
-                value: value_str,
-            })
-        }
-        Some(col) if col.role.is_pushable() && !col.role.is_required() && filter_op == FilterOp::Eq => {
-            let value_str = filter_value_to_string(&filter_value);
-            Ok(ConditionClass::QueryParam {
+        Some(col) if col.role.is_pushable() && filter_op == FilterOp::Eq => {
+            Ok(ConditionClass::Param {
                 api_name: ApiParamName::new(col.api_param_key()),
-                value: value_str,
+                value: filter_value,
             })
         }
         Some(_) => Ok(ConditionClass::LocalFilter(LocalFilter {
@@ -335,17 +317,6 @@ fn extract_value(expr: &Expr) -> Result<Scalar> {
     }
 }
 
-fn filter_value_to_string(v: &Scalar) -> String {
-    match v {
-        Scalar::String(s) => s.clone(),
-        Scalar::Integer(i) => i.to_string(),
-        Scalar::Float(f) => f.to_string(),
-        Scalar::Boolean(b) => b.to_string(),
-        Scalar::Null => String::new(),
-        Scalar::Json(j) => j.to_string(),
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Required param validation
 // ---------------------------------------------------------------------------
@@ -355,7 +326,8 @@ fn validate_required_params(
     classified: &ClassifiedConditions,
 ) -> Result<()> {
     for col in table.required_params() {
-        if !classified.path_params.contains_key(&col.name) {
+        let key = ApiParamName::new(col.api_param_key());
+        if !classified.params.contains_key(&key) {
             return Err(Error::MissingRequiredParam {
                 table: table.name.clone(),
                 column: col.name.clone(),
@@ -374,8 +346,7 @@ fn build_api_call(table: &VirtualTable, classified: &ClassifiedConditions) -> Ap
         table: table.name.clone(),
         endpoint: table.endpoint.clone(),
         columns: table.columns.clone(),
-        path_params: classified.path_params.clone(),
-        query_params: classified.query_params.clone(),
+        params: classified.params.clone(),
     }
 }
 
@@ -532,11 +503,8 @@ fn explain_source(source: &PlanSource, out: &mut String, indent: usize) {
                 "{pad}ApiCall: {} {} {}\n",
                 call.table, call.endpoint.method, call.endpoint.path
             ));
-            if !call.path_params.is_empty() {
-                out.push_str(&format!("{pad}  path_params: {:?}\n", call.path_params));
-            }
-            if !call.query_params.is_empty() {
-                out.push_str(&format!("{pad}  query_params: {:?}\n", call.query_params));
+            if !call.params.is_empty() {
+                out.push_str(&format!("{pad}  params: {:?}\n", call.params));
             }
         }
     }
@@ -631,11 +599,9 @@ mod tests {
 
         let PlanSource::ApiCall(call) = &plan.source;
 
-        let owner = ColumnName::new("owner").unwrap();
-        let repo = ColumnName::new("repo").unwrap();
-        assert_eq!(call.path_params.get(&owner).unwrap(), "anthropics");
-        assert_eq!(call.path_params.get(&repo).unwrap(), "claude-code");
-        assert_eq!(call.query_params.get(&ApiParamName::new("state")).unwrap(), "open");
+        assert_eq!(call.params.get(&ApiParamName::new("owner")).unwrap(), &Scalar::String("anthropics".into()));
+        assert_eq!(call.params.get(&ApiParamName::new("repo")).unwrap(), &Scalar::String("claude-code".into()));
+        assert_eq!(call.params.get(&ApiParamName::new("state")).unwrap(), &Scalar::String("open".into()));
         assert_eq!(plan.post.limit, Some(10));
         assert_eq!(plan.post.projections.len(), 2);
     }
