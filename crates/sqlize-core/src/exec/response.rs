@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::catalog::types::{
-    Column, ColumnName, ResultSet, Row, Value, sanitize_name,
+    Column, ColumnName, ColumnOrigin, ResultSet, Row, Value, sanitize_name,
 };
 use crate::error::Result;
 
@@ -22,11 +22,18 @@ pub fn json_to_result_set(
         _ => return Ok(ResultSet { columns: Vec::new(), rows: Vec::new() }),
     };
 
-    let col_names: Vec<ColumnName> = columns.iter().map(|c| c.name.clone()).collect();
+    // Exclude pure query params (sort, type, direction, etc.) — they're filter
+    // controls, not data columns. Keep path params, response fields, and dual-origin.
+    let data_columns: Vec<&Column> = columns
+        .iter()
+        .filter(|c| !matches!(c.origin, ColumnOrigin::QueryParam { .. }))
+        .collect();
+
+    let col_names: Vec<ColumnName> = data_columns.iter().map(|c| c.name.clone()).collect();
 
     let rows = items
         .iter()
-        .map(|item| extract_row(item, columns, param_values))
+        .map(|item| extract_row(item, &data_columns, param_values))
         .collect();
 
     Ok(ResultSet { columns: col_names, rows })
@@ -36,7 +43,7 @@ pub fn json_to_result_set(
 /// Injects path/query param values for non-response columns.
 fn extract_row(
     obj: &serde_json::Value,
-    columns: &[Column],
+    columns: &[&Column],
     param_values: &HashMap<ColumnName, String>,
 ) -> Row {
     let Some(map) = obj.as_object() else {
@@ -184,7 +191,7 @@ mod tests {
                 col_type: ColumnType::String,
                 nullable: false,
                 description: None,
-                origin: ColumnOrigin::QueryParam { api_name: None },
+                origin: ColumnOrigin::QueryParamAndResponseField { api_name: None },
             },
             Column {
                 name: ColumnName::new("title").unwrap(),
