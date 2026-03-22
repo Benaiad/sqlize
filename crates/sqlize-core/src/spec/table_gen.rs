@@ -121,14 +121,16 @@ fn try_build_table(
         }
     }
 
-    // Response fields — skip columns that already exist as params
-    let existing_names: std::collections::HashSet<_> =
+    // Response fields — skip columns whose name already exists as a param,
+    // since the param column already represents that field (e.g., `state` is
+    // both a query param for filtering and a response field for the value).
+    let param_names: std::collections::HashSet<_> =
         columns.iter().map(|c| c.name.as_str().to_owned()).collect();
     let response_columns = columns_from_schema(spec, item_schema, "")?;
     columns.extend(
         response_columns
             .into_iter()
-            .filter(|c| !existing_names.contains(c.name.as_str())),
+            .filter(|c| !param_names.contains(c.name.as_str())),
     );
 
     let description = operation

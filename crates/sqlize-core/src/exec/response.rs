@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::catalog::types::{
-    Column, ColumnName, ColumnOrigin, ResultSet, Row, Value, sanitize_name,
+    Column, ColumnName, ResultSet, Row, Value, sanitize_name,
 };
 use crate::error::Result;
 
@@ -60,21 +60,17 @@ fn extract_row(
     let values = columns
         .iter()
         .map(|col| {
-            match &col.origin {
-                // Path/query params: inject from the WHERE clause values
-                ColumnOrigin::PathParam | ColumnOrigin::QueryParam { .. } => {
-                    param_values
-                        .get(&col.name)
-                        .map(|v| Value::String(v.clone()))
-                        .unwrap_or(Value::Null)
-                }
-                // Response fields: extract from JSON
-                ColumnOrigin::ResponseField => {
-                    flat.get(col.name.as_str())
-                        .map(|v| json_value_to_value(v))
-                        .unwrap_or(Value::Null)
-                }
+            // Try JSON response first — handles fields like `state` that are
+            // both a query param and a response field.
+            if let Some(v) = flat.get(col.name.as_str()) {
+                return json_value_to_value(v);
             }
+            // Fall back to param values for path/query params not in the response
+            // (e.g., `owner` and `repo` which are URL segments, not response fields).
+            if let Some(v) = param_values.get(&col.name) {
+                return Value::String(v.clone());
+            }
+            Value::Null
         })
         .collect();
 
@@ -102,6 +98,7 @@ fn json_value_to_value(v: &serde_json::Value) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::catalog::types::ColumnOrigin;
     use crate::catalog::types::ColumnType;
 
     fn test_columns() -> Vec<Column> {

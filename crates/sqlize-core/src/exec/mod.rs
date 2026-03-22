@@ -12,10 +12,6 @@ use crate::sql::plan::{ApiCall, PlanSource, QueryPlan};
 /// Max rows when LIMIT is specified — prevents runaway pagination.
 const MAX_ROWS: usize = 10_000;
 
-/// Default rows when no LIMIT — single API page, no automatic pagination.
-/// Users must opt in to multi-page fetches with an explicit LIMIT.
-const DEFAULT_ROWS: usize = 100;
-
 /// Configuration for API authentication.
 #[derive(Debug, Clone)]
 pub struct AuthConfig {
@@ -32,13 +28,11 @@ pub async fn execute(
     client: &Client,
     catalog: &Catalog,
 ) -> Result<ResultSet> {
-    // Fetch enough rows to satisfy both OFFSET and LIMIT
-    let fetch_limit = match (plan.post.limit, plan.post.offset) {
-        (Some(l), Some(o)) => Some(l + o),
-        (Some(l), None) => Some(l),
-        (None, Some(o)) => Some(o + DEFAULT_ROWS as u64),
-        (None, None) => None,
-    };
+    // Only paginate when LIMIT is explicit. OFFSET alone uses the first page.
+    let fetch_limit = plan.post.limit.map(|l| {
+        let offset = plan.post.offset.unwrap_or(0);
+        l + offset
+    });
     let mut result = execute_source(&plan.source, client, auth, catalog, fetch_limit).await?;
     postprocess::apply(&plan.post, &mut result);
     Ok(result)

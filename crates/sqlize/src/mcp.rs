@@ -129,10 +129,9 @@ impl SqlizeServer {
             Err(e) => return format!("Execution error: {e}"),
         };
 
-        // Apply max_rows cap from the tool parameter
-        if let Some(max) = args.max_rows {
-            result.rows.truncate(max as usize);
-        }
+        // Apply max_rows cap (defaults to 100 as documented)
+        let max = args.max_rows.unwrap_or(100) as usize;
+        result.rows.truncate(max);
 
         let row_count = result.rows.len();
 
