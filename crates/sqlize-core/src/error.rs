@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use crate::catalog::types::{ColumnName, TableName};
+use crate::catalog::types::TableName;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -18,27 +18,12 @@ pub enum Error {
     #[error("table {0} not found in catalog")]
     TableNotFound(TableName),
 
-    #[error("column {column} not found in table {table}")]
-    ColumnNotFound {
-        table: TableName,
-        column: ColumnName,
-    },
-
-    #[error("missing required parameter {column} for table {table}")]
-    MissingRequiredParam {
-        table: TableName,
-        column: ColumnName,
-    },
-
     #[error("duplicate table name: {0}")]
     DuplicateTable(TableName),
 
-    // ---- SQL planning ----
+    // ---- SQL / DataFusion ----
     #[error("unsupported SQL: {0}")]
     UnsupportedSql(String),
-
-    #[error("SQL parse error: {0}")]
-    SqlParse(String),
 
     // ---- OpenAPI spec loading ----
     #[error("failed to read spec {path}: {message}")]
@@ -55,23 +40,6 @@ pub enum Error {
 
     #[error("cannot derive table name from path: {0}")]
     TableNameDerivation(String),
-
-    // ---- Execution ----
-    #[error("API returned {status}: {body}")]
-    ApiError {
-        status: u16,
-        url: String,
-        body: String,
-    },
-
-    #[error("failed to resolve URL: missing path parameters")]
-    UnresolvedUrl,
-
-    #[error("http error: {0}")]
-    Http(#[from] reqwest::Error),
-
-    #[error("json error: {0}")]
-    Json(#[from] serde_json::Error),
 
     // ---- Output ----
     #[error("TOON encoding error: {0}")]

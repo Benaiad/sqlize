@@ -14,7 +14,6 @@ publish = false
 
 [dependencies]
 openapiv3 = "2"
-sqlparser = { version = "0.61", features = ["serde"] }
 reqwest = { version = "0.12", features = ["json"] }
 tokio = { workspace = true }
 serde = { workspace = true }
@@ -23,3 +22,6 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 thiserror = { workspace = true }
 toon-format = { version = "0.4", default-features = false }
+datafusion = "46"
+async-trait = "0.1"
+futures = "0.3"

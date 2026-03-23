@@ -7,6 +7,7 @@ use std::sync::Arc;
 use clap::{Parser, Subcommand};
 
 use rmcp::ServiceExt;
+use sqlize_core::datafusion::SqlizeContext;
 use sqlize_core::exec::AuthConfig;
 
 #[derive(Parser)]
@@ -63,7 +64,6 @@ async fn main() -> anyhow::Result<()> {
 
     let is_mcp = matches!(cli.command, Some(Command::Mcp));
 
-    // MCP mode: log to stderr, read spec from env if not passed via flag
     if is_mcp {
         tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
@@ -83,7 +83,6 @@ async fn main() -> anyhow::Result<()> {
             std::process::exit(1);
         });
 
-    // CLI --tags takes priority, then SQLIZE_TAGS env var
     let tags: Option<Vec<String>> = cli.tags.or_else(|| {
         std::env::var("SQLIZE_TAGS")
             .ok()
@@ -103,6 +102,12 @@ async fn main() -> anyhow::Result<()> {
 
     let client = sqlize_core::exec::Client::new();
 
+    // Build the DataFusion-backed context
+    let sqlize_ctx = Arc::new(SqlizeContext::new());
+    sqlize_ctx
+        .register_spec("default", &catalog, auth.clone(), client.clone())
+        .map_err(|e| anyhow::anyhow!("{e}"))?;
+
     match cli.command {
         Some(Command::Mcp) => {
             tracing::info!(
@@ -112,7 +117,8 @@ async fn main() -> anyhow::Result<()> {
                 "sqlize MCP server starting"
             );
 
-            let server = mcp::SqlizeServer::new(Arc::new(catalog), auth, &spec_info.title);
+            let server =
+                mcp::SqlizeServer::new(Arc::new(catalog), sqlize_ctx, &spec_info.title);
             let transport = rmcp::transport::io::stdio();
 
             let service = server
@@ -123,9 +129,8 @@ async fn main() -> anyhow::Result<()> {
             service.waiting().await?;
         }
         Some(Command::Query { sql }) => {
-            let plan = sqlize_core::sql::planner::plan_query(&sql, &catalog)
-                .map_err(|e| anyhow::anyhow!("{e}"))?;
-            let result = sqlize_core::exec::execute(&plan, &auth, &client)
+            let result = sqlize_ctx
+                .query(&sql)
                 .await
                 .map_err(|e| anyhow::anyhow!("{e}"))?;
 
@@ -143,9 +148,11 @@ async fn main() -> anyhow::Result<()> {
             }
         }
         Some(Command::Explain { sql }) => {
-            let plan = sqlize_core::sql::planner::plan_query(&sql, &catalog)
+            let explain = sqlize_ctx
+                .explain(&sql)
+                .await
                 .map_err(|e| anyhow::anyhow!("{e}"))?;
-            print!("{}", sqlize_core::sql::planner::explain(&plan));
+            print!("{explain}");
         }
         Some(Command::Schema { table }) => match table {
             Some(name) => {
@@ -168,7 +175,7 @@ async fn main() -> anyhow::Result<()> {
                 spec_info.base_url,
             );
 
-            repl::run(Arc::new(catalog), auth, client, cli.format).await;
+            repl::run(Arc::new(catalog), sqlize_ctx, cli.format).await;
         }
     }
 

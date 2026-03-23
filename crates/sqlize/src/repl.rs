@@ -15,9 +15,8 @@ use tabled::settings::{self, Width};
 use sqlize_core::catalog::Catalog;
 use sqlize_core::catalog::ddl::{catalog_ddl, table_ddl};
 use sqlize_core::catalog::types::{ResultSet, Scalar, TableName};
-use sqlize_core::exec::{AuthConfig, Client, execute};
+use sqlize_core::datafusion::SqlizeContext;
 use sqlize_core::output::{result_set_to_json, result_set_to_toon};
-use sqlize_core::sql::planner::{explain, plan_query};
 
 #[derive(Clone, Copy, clap::ValueEnum)]
 pub enum OutputFormat {
@@ -281,7 +280,7 @@ impl Completer for SqlCompleter {
 // REPL loop
 // ---------------------------------------------------------------------------
 
-pub async fn run(catalog: Arc<Catalog>, auth: AuthConfig, client: Client, format: OutputFormat) {
+pub async fn run(catalog: Arc<Catalog>, ctx: Arc<SqlizeContext>, format: OutputFormat) {
     eprintln!("Type SQL (end with ;), or: SHOW TABLES, DESCRIBE <table>, EXPLAIN <sql>");
     eprintln!("Ctrl+D to exit.\n");
 
@@ -329,7 +328,7 @@ pub async fn run(catalog: Arc<Catalog>, auth: AuthConfig, client: Client, format
                 if trimmed.is_empty() {
                     continue;
                 }
-                dispatch(&catalog, &auth, &client, trimmed, format).await;
+                dispatch(&catalog, &ctx, trimmed, format).await;
             }
             Ok(Signal::CtrlC) => continue,
             Ok(Signal::CtrlD) => break,
@@ -369,18 +368,17 @@ fn parse_command(input: &str) -> ReplCommand<'_> {
 
 async fn dispatch(
     catalog: &Catalog,
-    auth: &AuthConfig,
-    client: &Client,
+    ctx: &SqlizeContext,
     input: &str,
     format: OutputFormat,
 ) {
     match parse_command(input) {
         ReplCommand::ShowTables => handle_show_tables(catalog),
         ReplCommand::Describe(name) => handle_describe(catalog, name),
-        ReplCommand::Explain(sql) => handle_explain(catalog, sql),
+        ReplCommand::Explain(sql) => handle_explain(ctx, sql).await,
         ReplCommand::Schema => println!("{}", catalog_ddl(catalog)),
         ReplCommand::Quit => std::process::exit(0),
-        ReplCommand::Query(sql) => handle_query(catalog, auth, client, sql, format).await,
+        ReplCommand::Query(sql) => handle_query(ctx, sql, format).await,
     }
 }
 
@@ -423,29 +421,15 @@ fn handle_describe(catalog: &Catalog, name: &str) {
     println!("{}", table_ddl(table));
 }
 
-fn handle_explain(catalog: &Catalog, sql: &str) {
-    match plan_query(sql, catalog) {
-        Ok(plan) => println!("{}", explain(&plan)),
+async fn handle_explain(ctx: &SqlizeContext, sql: &str) {
+    match ctx.explain(sql).await {
+        Ok(plan) => println!("{plan}"),
         Err(e) => eprintln!("Error: {e}"),
     }
 }
 
-async fn handle_query(
-    catalog: &Catalog,
-    auth: &AuthConfig,
-    client: &Client,
-    sql: &str,
-    format: OutputFormat,
-) {
-    let plan = match plan_query(sql, catalog) {
-        Ok(p) => p,
-        Err(e) => {
-            eprintln!("Error: {e}");
-            return;
-        }
-    };
-
-    let result = match execute(&plan, auth, client).await {
+async fn handle_query(ctx: &SqlizeContext, sql: &str, format: OutputFormat) {
+    let result = match ctx.query(sql).await {
         Ok(r) => r,
         Err(e) => {
             eprintln!("Error: {e}");

@@ -10,20 +10,18 @@ use rmcp::tool;
 use sqlize_core::catalog::Catalog;
 use sqlize_core::catalog::ddl::table_ddl;
 use sqlize_core::catalog::types::TableName;
-use sqlize_core::exec::{AuthConfig, execute};
+use sqlize_core::datafusion::SqlizeContext;
 use sqlize_core::output::{result_set_to_json, result_set_to_toon};
-use sqlize_core::sql::planner::{explain, plan_query};
 
 pub struct SqlizeServer {
     catalog: Arc<Catalog>,
-    auth: AuthConfig,
-    client: sqlize_core::exec::Client,
+    ctx: Arc<SqlizeContext>,
     instructions: String,
     tool_router: ToolRouter<Self>,
 }
 
 impl SqlizeServer {
-    pub fn new(catalog: Arc<Catalog>, auth: AuthConfig, api_title: &str) -> Self {
+    pub fn new(catalog: Arc<Catalog>, ctx: Arc<SqlizeContext>, api_title: &str) -> Self {
         let table_names: Vec<&str> = catalog.tables().map(|t| t.name.as_str()).collect();
         let instructions = format!(
             "SQLize: Query the {api_title} using SQL.\n\
@@ -35,8 +33,7 @@ impl SqlizeServer {
 
         Self {
             catalog,
-            auth,
-            client: sqlize_core::exec::Client::new(),
+            ctx,
             instructions,
             tool_router: Self::tool_router(),
         }
@@ -116,20 +113,14 @@ impl SqlizeServer {
     /// Execute a read-only SQL query against virtual API tables.
     /// Returns results in TOON format (compact, token-efficient) by default.
     ///
-    /// Example: SELECT number, title FROM repos_issues WHERE owner = 'rust-lang' AND repo = 'rust' AND state = 'open' LIMIT 5
+    /// Example: SELECT number, title FROM issues WHERE owner = 'rust-lang' AND repo = 'rust' AND state = 'open' LIMIT 5
     #[tool(name = "query")]
     async fn query(&self, Parameters(args): Parameters<QueryArgs>) -> String {
-        let plan = match plan_query(&args.sql, &self.catalog) {
-            Ok(p) => p,
-            Err(e) => return format!("Planning error: {e}"),
-        };
-
-        let mut result = match execute(&plan, &self.auth, &self.client).await {
+        let mut result = match self.ctx.query(&args.sql).await {
             Ok(r) => r,
-            Err(e) => return format!("Execution error: {e}"),
+            Err(e) => return format!("Error: {e}"),
         };
 
-        // Apply max_rows cap (defaults to 100 as documented)
         let max = args.max_rows.unwrap_or(100) as usize;
         result.rows.truncate(max);
 
@@ -154,8 +145,8 @@ impl SqlizeServer {
     /// and what post-processing would be applied locally.
     #[tool(name = "explain")]
     async fn explain_query(&self, Parameters(args): Parameters<ExplainArgs>) -> String {
-        match plan_query(&args.sql, &self.catalog) {
-            Ok(plan) => explain(&plan),
+        match self.ctx.explain(&args.sql).await {
+            Ok(plan) => plan,
             Err(e) => format!("Error: {e}"),
         }
     }
