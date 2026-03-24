@@ -181,7 +181,11 @@ async fn main() -> anyhow::Result<()> {
             bearer_token: resolve_bearer_token(&spec.name),
         };
 
-        let schema_name = if is_single_spec { "default" } else { &spec.name };
+        let schema_name = if is_single_spec {
+            "default"
+        } else {
+            &spec.name
+        };
 
         sqlize_ctx
             .register_spec(schema_name, &spec.catalog, auth, client.clone())

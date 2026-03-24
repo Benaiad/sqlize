@@ -52,11 +52,8 @@ impl SchemaProvider for ApiSchemaProvider {
     ) -> datafusion::common::Result<Option<Arc<dyn TableProvider>>> {
         match self.tables.get(name) {
             Some(vt) => {
-                let provider = ApiTableProvider::new(
-                    vt.clone(),
-                    self.auth.clone(),
-                    self.client.clone(),
-                );
+                let provider =
+                    ApiTableProvider::new(vt.clone(), self.auth.clone(), self.client.clone());
                 Ok(Some(Arc::new(provider)))
             }
             None => Ok(None),

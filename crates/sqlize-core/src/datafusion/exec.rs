@@ -184,8 +184,7 @@ async fn fetch_all(
     let mut is_first_page = true;
 
     while let Some(url) = next_url.take() {
-        let (body, headers) =
-            fetch_page(client, auth, table, params, &url, is_first_page).await?;
+        let (body, headers) = fetch_page(client, auth, table, params, &url, is_first_page).await?;
 
         let data = unwrap_response(&body, &table.endpoint.data_path);
 
@@ -296,8 +295,7 @@ async fn fetch_page(
 
     if !status.is_success() {
         let body = resp.text().await.unwrap_or_default();
-        return Err(DataFusionError::External(Box::new(std::io::Error::new(
-            std::io::ErrorKind::Other,
+        return Err(DataFusionError::External(Box::new(std::io::Error::other(
             format!("API returned {status}: {body}"),
         ))));
     }

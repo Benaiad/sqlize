@@ -2,9 +2,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use datafusion::arrow::array::{
-    ArrayRef, BooleanArray, BooleanBuilder, Float32Array, Float64Array, Float64Builder,
-    Int16Array, Int32Array, Int64Array, Int64Builder, Int8Array, LargeStringArray, RecordBatch,
-    StringArray, StringBuilder, UInt16Array, UInt32Array, UInt64Array, UInt8Array,
+    ArrayRef, BooleanArray, BooleanBuilder, Float32Array, Float64Array, Float64Builder, Int8Array,
+    Int16Array, Int32Array, Int64Array, Int64Builder, LargeStringArray, RecordBatch, StringArray,
+    StringBuilder, UInt8Array, UInt16Array, UInt32Array, UInt64Array,
 };
 use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef};
 use datafusion::common::DataFusionError;
@@ -214,9 +214,7 @@ pub fn batches_to_result_set(batches: &[RecordBatch]) -> ResultSet {
     let columns: Vec<ColumnName> = schema
         .fields()
         .iter()
-        .map(|f| {
-            ColumnName::new(f.name()).unwrap_or_else(|_| ColumnName::new("_unknown").unwrap())
-        })
+        .map(|f| ColumnName::new(f.name()).unwrap_or_else(|_| ColumnName::new("_unknown").unwrap()))
         .collect();
 
     let mut rows = Vec::new();
@@ -295,7 +293,10 @@ fn arrow_value_to_scalar(array: &ArrayRef, idx: usize) -> Scalar {
         }
         _ => {
             // Fallback: render as string via Display
-            Scalar::String(format!("{}", datafusion::arrow::util::display::array_value_to_string(array, idx).unwrap_or_default()))
+            Scalar::String(
+                datafusion::arrow::util::display::array_value_to_string(array, idx)
+                    .unwrap_or_default(),
+            )
         }
     }
 }

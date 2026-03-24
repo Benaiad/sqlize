@@ -102,11 +102,6 @@ impl CatalogSet {
         out
     }
 
-    /// Total table count across all specs.
-    pub fn table_count(&self) -> usize {
-        self.entries.iter().map(|(_, c)| c.table_count()).sum()
-    }
-
     /// All table and column names for autocompletion.
     fn completion_words(&self) -> Vec<String> {
         let mut seen = std::collections::HashSet::new();

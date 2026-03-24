@@ -35,11 +35,7 @@ impl fmt::Debug for ApiTableProvider {
 }
 
 impl ApiTableProvider {
-    pub fn new(
-        table: VirtualTable,
-        auth: AuthConfig,
-        client: reqwest::Client,
-    ) -> Self {
+    pub fn new(table: VirtualTable, auth: AuthConfig, client: reqwest::Client) -> Self {
         let schema = virtual_table_to_schema(&table);
         Self {
             table,
@@ -86,7 +82,11 @@ impl TableProvider for ApiTableProvider {
         for filter in filters {
             if let Some((col_name, value)) = extract_eq_filter(filter) {
                 // Check if this column is pushable
-                if let Some(col) = self.table.columns.iter().find(|c| c.name.as_str() == col_name)
+                if let Some(col) = self
+                    .table
+                    .columns
+                    .iter()
+                    .find(|c| c.name.as_str() == col_name)
                 {
                     if col.role.is_pushable() {
                         let api_key = col.api_param_key().to_owned();

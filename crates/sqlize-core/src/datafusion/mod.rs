@@ -23,6 +23,12 @@ pub struct SqlizeContext {
     ctx: SessionContext,
 }
 
+impl Default for SqlizeContext {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SqlizeContext {
     pub fn new() -> Self {
         let config = SessionConfig::new()
