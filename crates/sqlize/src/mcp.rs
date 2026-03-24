@@ -7,22 +7,25 @@ use rmcp::model::{Implementation, ServerCapabilities, ServerInfo};
 use rmcp::schemars;
 use rmcp::tool;
 
-use sqlize_core::catalog::Catalog;
-use sqlize_core::catalog::ddl::table_ddl;
-use sqlize_core::catalog::types::TableName;
 use sqlize_core::datafusion::SqlizeContext;
 use sqlize_core::output::{result_set_to_json, result_set_to_toon};
 
+use crate::repl::CatalogSet;
+
 pub struct SqlizeServer {
-    catalog: Arc<Catalog>,
+    catalog_set: Arc<CatalogSet>,
     ctx: Arc<SqlizeContext>,
     instructions: String,
     tool_router: ToolRouter<Self>,
 }
 
 impl SqlizeServer {
-    pub fn new(catalog: Arc<Catalog>, ctx: Arc<SqlizeContext>, api_title: &str) -> Self {
-        let table_names: Vec<&str> = catalog.tables().map(|t| t.name.as_str()).collect();
+    pub fn new(catalog_set: Arc<CatalogSet>, ctx: Arc<SqlizeContext>, api_title: &str) -> Self {
+        let table_names: Vec<String> = catalog_set
+            .all_tables()
+            .iter()
+            .map(|(_, t)| t.name.as_str().to_owned())
+            .collect();
         let instructions = format!(
             "SQLize: Query the {api_title} using SQL.\n\
              Use get_schema to discover tables, then query to execute SQL.\n\
@@ -32,7 +35,7 @@ impl SqlizeServer {
         );
 
         Self {
-            catalog,
+            catalog_set,
             ctx,
             instructions,
             tool_router: Self::tool_router(),
@@ -70,27 +73,26 @@ impl SqlizeServer {
     #[tool(name = "get_schema")]
     async fn get_schema(&self, Parameters(args): Parameters<GetSchemaArgs>) -> String {
         match &args.table {
-            Some(name) => {
-                let Ok(table_name) = TableName::new(name) else {
-                    return format!("Error: invalid table name '{name}'");
-                };
-                match self.catalog.get(&table_name) {
-                    Some(table) => table_ddl(table),
-                    None => {
-                        let available: Vec<&str> =
-                            self.catalog.tables().map(|t| t.name.as_str()).collect();
-                        format!(
-                            "Table '{name}' not found. Available tables:\n{}",
-                            available.join(", ")
-                        )
-                    }
+            Some(name) => match self.catalog_set.describe(name) {
+                Some(ddl) => ddl,
+                None => {
+                    let available: Vec<String> = self
+                        .catalog_set
+                        .all_tables()
+                        .iter()
+                        .map(|(_, t)| t.name.as_str().to_owned())
+                        .collect();
+                    format!(
+                        "Table '{name}' not found. Available tables:\n{}",
+                        available.join(", ")
+                    )
                 }
-            }
+            },
             None => {
                 let mut out = String::from(
                     "Available tables (use get_schema with a table name for full DDL):\n\n",
                 );
-                for table in self.catalog.tables() {
+                for (_, table) in self.catalog_set.all_tables() {
                     let required: Vec<_> =
                         table.required_params().map(|c| c.name.as_str()).collect();
                     let req = if required.is_empty() {

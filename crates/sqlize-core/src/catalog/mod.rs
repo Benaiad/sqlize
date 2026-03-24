@@ -11,7 +11,7 @@ use crate::error::{Error, Result};
 ///
 /// Constructed from an OpenAPI spec via `Catalog::from_tables`.
 /// Lookup is by `TableName` — the catalog owns the tables.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Catalog {
     tables: BTreeMap<TableName, VirtualTable>,
 }

@@ -41,9 +41,9 @@ sqlize> SELECT email, name FROM customers;
 ╰──────────────────────┴────────────────╯
 ```
 
-Supported SQL: `SELECT`, `WHERE` (with `AND`), `ORDER BY`, `LIMIT`, `OFFSET`, column aliases. No JOINs, subqueries, or aggregations. Read-only — no INSERT/UPDATE/DELETE.
+Powered by [Apache DataFusion](https://datafusion.apache.org/). Supports `SELECT`, `WHERE`, `ORDER BY`, `LIMIT`, `OFFSET`, `GROUP BY`, `HAVING`, `COUNT`, `SUM`, `AVG`, `MIN`, `MAX`, `JOIN`, subqueries, CTEs, `UNION`/`INTERSECT`, `CASE`, `CAST`, and more. Read-only — no INSERT/UPDATE/DELETE.
 
-Results are returned in [TOON](https://github.com/toon-format/toon) (compact, token-oriented encoding, 40–50% smaller than JSON), JSON, or as a table.
+Results are returned in [TOON](https://github.com/toon-format/toon) (compact, token-oriented encoding, 40-50% smaller than JSON), JSON, or as a table.
 
 ## Quickstart
 
@@ -128,6 +128,73 @@ claude mcp add \
   sqlize-github -- sqlize mcp
 ```
 
+## Multi-spec federation
+
+Query multiple APIs in a single session. Each `--spec` registers a named schema:
+
+```sh
+sqlize \
+  --spec github:specs/github-minimal.json \
+  --spec stripe:specs/stripe-minimal.json
+```
+
+Use qualified table names to query across APIs:
+
+```sql
+sqlize> SELECT name, stargazers_count FROM github.orgs_repos WHERE org = 'openclaw' LIMIT 5;
+sqlize> SELECT email, name FROM stripe.customers LIMIT 5;
+```
+
+JOINs across APIs work too:
+
+```sql
+SELECT c.name, c.email, k.commit_message
+FROM stripe.customers c
+JOIN github.commits k ON c.name = k.author_login
+WHERE k.owner = 'openclaw' AND k.repo = 'openclaw'
+LIMIT 5;
+```
+
+### Per-spec auth
+
+Each spec resolves its token independently. Set per-spec env vars using the spec name (uppercased):
+
+```sh
+# Per-spec tokens
+export SQLIZE_BEARER_TOKEN_GITHUB=ghp_...
+export SQLIZE_BEARER_TOKEN_STRIPE=sk_test_...
+
+# Or per-spec env var indirection
+export SQLIZE_BEARER_ENV_VAR_GITHUB=GITHUB_TOKEN
+export SQLIZE_BEARER_ENV_VAR_STRIPE=STRIPE_TEST_API_KEY
+```
+
+Falls back to `SQLIZE_BEARER_TOKEN` / `SQLIZE_BEARER_ENV_VAR` when no per-spec var is set.
+
+### Schema name resolution
+
+The schema name is derived from the `--spec` flag:
+
+| Flag | Schema name |
+|------|-------------|
+| `--spec github:specs/github.json` | `github` |
+| `--spec specs/github-minimal.json` | `github` (auto-derived, `-minimal` stripped) |
+| `--spec specs/stripe-minimal.json` | `stripe` |
+
+With a single `--spec`, bare table names work without a schema prefix.
+
+## Aggregations
+
+DataFusion provides full aggregate support:
+
+```sql
+SELECT language, COUNT(*) as count
+FROM orgs_repos
+WHERE org = 'openclaw'
+GROUP BY language
+ORDER BY count DESC;
+```
+
 ## How queries map to API calls
 
 ```sql
@@ -135,12 +202,9 @@ sqlize> EXPLAIN SELECT number, title FROM issues
      >  WHERE owner = 'openclaw' AND repo = 'openclaw' AND state = 'open'
      >  ORDER BY created_at DESC
      >  LIMIT 10;
-GET https://api.github.com/repos/openclaw/openclaw/issues?state=open
-Order by: created_at DESC
-Limit: 10
 ```
 
-`WHERE` conditions on path parameters (`owner`, `repo`) are substituted into the URL. Query parameters (`state`) are pushed to the API as `?key=value`. Everything else (`ORDER BY`, `LIMIT`) is applied locally after the fetch.
+`WHERE` conditions on path parameters (`owner`, `repo`) are substituted into the URL. Query parameters (`state`) are pushed to the API as `?key=value`. Everything else (`ORDER BY`, `LIMIT`, `GROUP BY`, `JOIN`) is applied locally by DataFusion after the fetch.
 
 Path parameters are required — omitting them fails at query planning, before any HTTP call is made.
 

@@ -14,7 +14,7 @@ use tabled::settings::{self, Width};
 
 use sqlize_core::catalog::Catalog;
 use sqlize_core::catalog::ddl::{catalog_ddl, table_ddl};
-use sqlize_core::catalog::types::{ResultSet, Scalar, TableName};
+use sqlize_core::catalog::types::{ResultSet, Scalar, TableName, VirtualTable};
 use sqlize_core::datafusion::SqlizeContext;
 use sqlize_core::output::{result_set_to_json, result_set_to_toon};
 
@@ -23,6 +23,134 @@ pub enum OutputFormat {
     Table,
     Json,
     Toon,
+}
+
+// ---------------------------------------------------------------------------
+// CatalogSet — merged view of multiple named catalogs
+// ---------------------------------------------------------------------------
+
+/// A collection of named catalogs for multi-spec support.
+/// Provides unified SHOW TABLES / DESCRIBE across all specs.
+pub struct CatalogSet {
+    entries: Vec<(String, Catalog)>,
+}
+
+impl CatalogSet {
+    pub fn new(catalogs: &[(&str, &Catalog)]) -> Self {
+        let entries = catalogs
+            .iter()
+            .map(|(name, cat)| (name.to_string(), (*cat).clone()))
+            .collect();
+        Self { entries }
+    }
+
+    pub fn is_multi(&self) -> bool {
+        self.entries.len() > 1
+    }
+
+    /// All tables across all catalogs, with optional schema prefix.
+    pub fn all_tables(&self) -> Vec<(&str, &VirtualTable)> {
+        let mut tables = Vec::new();
+        for (name, catalog) in &self.entries {
+            for table in catalog.tables() {
+                tables.push((name.as_str(), table));
+            }
+        }
+        tables
+    }
+
+    /// Look up a table by name. Supports "schema.table" or bare "table" (searches all).
+    pub fn find_table(&self, name: &str) -> Option<(&str, &VirtualTable)> {
+        if let Some((schema, table)) = name.split_once('.') {
+            // Qualified: schema.table
+            for (cat_name, catalog) in &self.entries {
+                if cat_name == schema {
+                    if let Ok(tn) = TableName::new(table) {
+                        if let Some(t) = catalog.get(&tn) {
+                            return Some((cat_name, t));
+                        }
+                    }
+                }
+            }
+            None
+        } else {
+            // Bare: search all catalogs
+            if let Ok(tn) = TableName::new(name) {
+                for (cat_name, catalog) in &self.entries {
+                    if let Some(t) = catalog.get(&tn) {
+                        return Some((cat_name, t));
+                    }
+                }
+            }
+            None
+        }
+    }
+
+    pub fn describe(&self, name: &str) -> Option<String> {
+        self.find_table(name).map(|(_, t)| table_ddl(t))
+    }
+
+    pub fn full_ddl(&self) -> String {
+        let mut out = String::new();
+        for (name, catalog) in &self.entries {
+            if self.is_multi() {
+                out.push_str(&format!("-- Schema: {name}\n\n"));
+            }
+            out.push_str(&catalog_ddl(catalog));
+            out.push('\n');
+        }
+        out
+    }
+
+    /// Total table count across all specs.
+    pub fn table_count(&self) -> usize {
+        self.entries.iter().map(|(_, c)| c.table_count()).sum()
+    }
+
+    /// All table and column names for autocompletion.
+    fn completion_words(&self) -> Vec<String> {
+        let mut seen = std::collections::HashSet::new();
+        let mut words = Vec::new();
+
+        let mut add = |s: String| {
+            if seen.insert(s.to_ascii_uppercase()) {
+                words.push(s);
+            }
+        };
+
+        for kw in SQL_KEYWORDS {
+            add(kw.to_string());
+            add(kw.to_ascii_lowercase());
+        }
+
+        for (schema_name, catalog) in &self.entries {
+            for table in catalog.tables() {
+                add(table.name.as_str().to_owned());
+                // Add qualified name for multi-spec
+                if self.is_multi() {
+                    add(format!("{}.{}", schema_name, table.name));
+                }
+                for col in &table.columns {
+                    add(col.name.as_str().to_owned());
+                }
+            }
+        }
+
+        for cmd in ["SHOW TABLES", "DESCRIBE", "EXPLAIN", "SCHEMA", "DDL"] {
+            add(cmd.to_owned());
+        }
+
+        words.sort();
+        words
+    }
+}
+
+impl Clone for CatalogSet {
+    fn clone(&self) -> Self {
+        Self {
+            entries: self.entries.clone(),
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -75,7 +203,6 @@ impl Validator for SqlValidator {
 
         let upper = trimmed.to_ascii_uppercase();
 
-        // Single-line commands are always complete
         if upper == "SHOW TABLES"
             || upper.starts_with("DESCRIBE ")
             || upper == "SCHEMA"
@@ -87,7 +214,6 @@ impl Validator for SqlValidator {
             return ValidationResult::Complete;
         }
 
-        // SQL statements: wait for semicolon
         if trimmed.ends_with(';') {
             ValidationResult::Complete
         } else {
@@ -122,7 +248,6 @@ impl Highlighter for SqlHighlighter {
 
         while let Some(&ch) = chars.peek() {
             if ch == '\'' {
-                // String literal
                 if !token.is_empty() {
                     push_token(
                         &mut styled,
@@ -190,48 +315,15 @@ impl Highlighter for SqlHighlighter {
 }
 
 // ---------------------------------------------------------------------------
-// Completer — SQL keywords + table/column names from catalog
+// Completer
 // ---------------------------------------------------------------------------
 
 struct SqlCompleter {
     words: Vec<String>,
 }
 
-impl SqlCompleter {
-    fn from_catalog(catalog: &Catalog) -> Self {
-        let mut seen = std::collections::HashSet::new();
-        let mut words = Vec::new();
-
-        let mut add = |s: String| {
-            if seen.insert(s.to_ascii_uppercase()) {
-                words.push(s);
-            }
-        };
-
-        for kw in SQL_KEYWORDS {
-            add(kw.to_string());
-            add(kw.to_ascii_lowercase());
-        }
-
-        for table in catalog.tables() {
-            add(table.name.as_str().to_owned());
-            for col in &table.columns {
-                add(col.name.as_str().to_owned());
-            }
-        }
-
-        for cmd in ["SHOW TABLES", "DESCRIBE", "EXPLAIN", "SCHEMA", "DDL"] {
-            add(cmd.to_owned());
-        }
-
-        words.sort();
-        Self { words }
-    }
-}
-
 impl Completer for SqlCompleter {
     fn complete(&mut self, line: &str, pos: usize) -> Vec<Suggestion> {
-        // Find the word being typed at the cursor position
         let before_cursor = &line[..pos];
         let word_start = before_cursor
             .rfind(|c: char| c.is_ascii_whitespace() || c == ',' || c == '(' || c == ')')
@@ -252,7 +344,6 @@ impl Completer for SqlCompleter {
                 wu.starts_with(&partial_upper) && wu != partial_upper
             })
             .map(|w| {
-                // Match the case of what the user is typing
                 let value = if partial
                     .chars()
                     .next()
@@ -280,7 +371,7 @@ impl Completer for SqlCompleter {
 // REPL loop
 // ---------------------------------------------------------------------------
 
-pub async fn run(catalog: Arc<Catalog>, ctx: Arc<SqlizeContext>, format: OutputFormat) {
+pub async fn run(catalog_set: Arc<CatalogSet>, ctx: Arc<SqlizeContext>, format: OutputFormat) {
     eprintln!("Type SQL (end with ;), or: SHOW TABLES, DESCRIBE <table>, EXPLAIN <sql>");
     eprintln!("Ctrl+D to exit.\n");
 
@@ -291,7 +382,9 @@ pub async fn run(catalog: Arc<Catalog>, ctx: Arc<SqlizeContext>, format: OutputF
     let history =
         FileBackedHistory::with_file(1000, history_file).expect("failed to create history file");
 
-    let completer = Box::new(SqlCompleter::from_catalog(&catalog));
+    let completer = Box::new(SqlCompleter {
+        words: catalog_set.completion_words(),
+    });
     let completion_menu = Box::new(ColumnarMenu::default().with_name("completion_menu"));
 
     let mut keybindings = default_emacs_keybindings();
@@ -328,7 +421,7 @@ pub async fn run(catalog: Arc<Catalog>, ctx: Arc<SqlizeContext>, format: OutputF
                 if trimmed.is_empty() {
                     continue;
                 }
-                dispatch(&catalog, &ctx, trimmed, format).await;
+                dispatch(&catalog_set, &ctx, trimmed, format).await;
             }
             Ok(Signal::CtrlC) => continue,
             Ok(Signal::CtrlD) => break,
@@ -367,16 +460,16 @@ fn parse_command(input: &str) -> ReplCommand<'_> {
 }
 
 async fn dispatch(
-    catalog: &Catalog,
+    catalog_set: &CatalogSet,
     ctx: &SqlizeContext,
     input: &str,
     format: OutputFormat,
 ) {
     match parse_command(input) {
-        ReplCommand::ShowTables => handle_show_tables(catalog),
-        ReplCommand::Describe(name) => handle_describe(catalog, name),
+        ReplCommand::ShowTables => handle_show_tables(catalog_set),
+        ReplCommand::Describe(name) => handle_describe(catalog_set, name),
         ReplCommand::Explain(sql) => handle_explain(ctx, sql).await,
-        ReplCommand::Schema => println!("{}", catalog_ddl(catalog)),
+        ReplCommand::Schema => print!("{}", catalog_set.full_ddl()),
         ReplCommand::Quit => std::process::exit(0),
         ReplCommand::Query(sql) => handle_query(ctx, sql, format).await,
     }
@@ -386,39 +479,49 @@ async fn dispatch(
 // Handlers
 // ---------------------------------------------------------------------------
 
-fn handle_show_tables(catalog: &Catalog) {
+fn handle_show_tables(catalog_set: &CatalogSet) {
     let mut builder = Builder::default();
-    builder.push_record(["table", "columns", "required", "description"]);
 
-    for table in catalog.tables() {
+    if catalog_set.is_multi() {
+        builder.push_record(["schema", "table", "columns", "required", "description"]);
+    } else {
+        builder.push_record(["table", "columns", "required", "description"]);
+    }
+
+    for (schema_name, table) in catalog_set.all_tables() {
         let required: Vec<_> = table.required_params().map(|c| c.name.as_str()).collect();
-        builder.push_record([
-            table.name.as_str(),
-            &table.columns.len().to_string(),
-            &if required.is_empty() {
-                "-".to_owned()
-            } else {
-                required.join(", ")
-            },
-            &table.description,
-        ]);
+        let req_str = if required.is_empty() {
+            "-".to_owned()
+        } else {
+            required.join(", ")
+        };
+
+        if catalog_set.is_multi() {
+            builder.push_record([
+                schema_name,
+                table.name.as_str(),
+                &table.columns.len().to_string(),
+                &req_str,
+                &table.description,
+            ]);
+        } else {
+            builder.push_record([
+                table.name.as_str(),
+                &table.columns.len().to_string(),
+                &req_str,
+                &table.description,
+            ]);
+        }
     }
 
     print_table(builder);
 }
 
-fn handle_describe(catalog: &Catalog, name: &str) {
-    let Ok(table_name) = TableName::new(name) else {
-        eprintln!("Invalid table name: {name}");
-        return;
-    };
-
-    let Some(table) = catalog.get(&table_name) else {
-        eprintln!("Table not found: {name}");
-        return;
-    };
-
-    println!("{}", table_ddl(table));
+fn handle_describe(catalog_set: &CatalogSet, name: &str) {
+    match catalog_set.describe(name) {
+        Some(ddl) => println!("{ddl}"),
+        None => eprintln!("Table not found: {name}"),
+    }
 }
 
 async fn handle_explain(ctx: &SqlizeContext, sql: &str) {
@@ -441,7 +544,6 @@ async fn handle_query(ctx: &SqlizeContext, sql: &str, format: OutputFormat) {
 
     match format {
         OutputFormat::Table => {
-            // Auto-switch to expanded (vertical) mode when there are many columns
             if result.columns.len() > 6 {
                 print_expanded(&result);
             } else {
@@ -473,7 +575,6 @@ async fn handle_query(ctx: &SqlizeContext, sql: &str, format: OutputFormat) {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Expanded (vertical) display — one row per record, psql `\x` style.
 fn print_expanded(result: &ResultSet) {
     let max_col_width = result
         .columns
