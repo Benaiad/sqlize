@@ -11,11 +11,12 @@ use crate::error::{Error, Result};
 
 use super::column_map::{columns_from_schema, resolve_boxed_schema, resolve_schema};
 
-/// Generate virtual tables from all GET list-endpoints in the spec.
+/// Generate virtual tables from all GET endpoints in the spec.
 ///
-/// Only considers GET operations that return an array (list endpoints).
-/// Single-resource endpoints (GET /repos/{owner}/{repo}) are skipped
-/// because they map to keyed access on the list table.
+/// Considers GET operations that return:
+/// - An array (list endpoints)
+/// - A wrapped array (e.g. `{"data": [...]}`)
+/// - A single object (treated as a one-row table)
 ///
 /// When multiple paths produce the same table name, a disambiguated name
 /// is constructed from the path context (e.g., `git_branches` vs `branches`).
@@ -93,7 +94,7 @@ fn matches_tag_filter(op: &Operation, filter: Option<&[&str]>) -> bool {
 }
 
 /// Try to build a virtual table from a GET operation.
-/// Returns `None` if the endpoint isn't a list endpoint (doesn't return an array).
+/// Returns `None` if the response schema can't be extracted.
 fn try_build_table(
     spec: &OpenAPI,
     path_str: &str,
@@ -102,7 +103,7 @@ fn try_build_table(
     base_url: &str,
 ) -> Result<Option<VirtualTable>> {
     // Find the success response schema and its content type
-    let Some((item_schema, content_type, data_path)) = extract_list_item_schema(spec, operation)
+    let Some((item_schema, content_type, data_path)) = extract_response_schema(spec, operation)
     else {
         return Ok(None);
     };
@@ -132,16 +133,18 @@ fn try_build_table(
     // field's metadata (description, nullability). This handles columns like `state`
     // which is both filterable and present in the response.
     let response_columns = columns_from_schema(spec, item_schema, "")?;
-    for resp_col in response_columns {
+    for mut resp_col in response_columns {
+        // APIs frequently return null for "required" fields, so treat all
+        // response columns as nullable to avoid Arrow schema mismatches.
+        resp_col.nullable = true;
+
         if let Some(existing) = columns.iter_mut().find(|c| c.name == resp_col.name) {
             if matches!(existing.role, ColumnRole::QueryParam) {
                 existing.role = ColumnRole::QueryParamAndResponse;
-                // Prefer the response field's metadata — it describes the value,
-                // not the filter semantics.
                 if resp_col.description.is_some() {
                     existing.description = resp_col.description;
                 }
-                existing.nullable = resp_col.nullable;
+                existing.nullable = true;
             }
         } else {
             columns.push(resp_col);
@@ -172,19 +175,20 @@ fn try_build_table(
     }))
 }
 
-/// Extract the item schema from a list endpoint's response.
+/// Extract the response schema from a GET endpoint.
 ///
 /// Returns (item_schema, content_type, data_path) where:
-/// - `item_schema` is the schema of each array element
+/// - `item_schema` is the schema of each result item (or the single object)
 /// - `content_type` is the Accept header value
-/// - `data_path` is `None` for top-level arrays, or `Some("field")` for
+/// - `data_path` is `None` for top-level arrays/objects, or `Some("field")` for
 ///   wrapped responses like `{"data": [...]}`
 ///
-/// Handles two response shapes:
+/// Handles three response shapes:
 /// 1. Top-level array: `[{...}, {...}]`
 /// 2. Wrapped array: `{"data": [{...}], "has_more": true}` — finds the
 ///    object property whose type is `array` and extracts its items schema.
-fn extract_list_item_schema<'a>(
+/// 3. Single object: `{...}` — treated as a one-row table.
+fn extract_response_schema<'a>(
     spec: &'a OpenAPI,
     operation: &'a Operation,
 ) -> Option<(&'a openapiv3::Schema, String, Option<String>)> {
@@ -218,17 +222,32 @@ fn extract_list_item_schema<'a>(
     }
 
     // Case 2: wrapped array — object with a property that's an array of objects
+    // Only matches when the array items are objects (e.g. Stripe's {"data": [{...}]}),
+    // not primitive arrays like {"topics": ["rust", "sql"]}.
     if let SchemaKind::Type(OaType::Object(obj)) = &schema.schema_kind {
         for (field_name, prop_ref) in &obj.properties {
             let Some(prop_schema) = resolve_boxed_schema(spec, prop_ref) else {
                 continue;
             };
             if let SchemaKind::Type(OaType::Array(arr)) = &prop_schema.schema_kind {
-                let items_ref = arr.items.as_ref()?;
-                let item_schema = resolve_boxed_schema(spec, items_ref)?;
-                return Some((item_schema, content_type.clone(), Some(field_name.clone())));
+                if let Some(items_ref) = arr.items.as_ref() {
+                    if let Some(item_schema) = resolve_boxed_schema(spec, items_ref) {
+                        if matches!(item_schema.schema_kind, SchemaKind::Type(OaType::Object(_))) {
+                            return Some((
+                                item_schema,
+                                content_type.clone(),
+                                Some(field_name.clone()),
+                            ));
+                        }
+                    }
+                }
             }
         }
+    }
+
+    // Case 3: single object — treated as a one-row table
+    if matches!(schema.schema_kind, SchemaKind::Type(OaType::Object(_))) {
+        return Some((schema, content_type.clone(), None));
     }
 
     None
