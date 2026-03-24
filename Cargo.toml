@@ -3,7 +3,7 @@ members = ["crates/sqlize-core", "crates/sqlize"]
 resolver = "2"
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 license = "MIT"
 authors = ["Ben Aiad"]
@@ -12,7 +12,7 @@ homepage = "https://github.com/Benaiad/sqlize"
 rust-version = "1.85"
 
 [workspace.dependencies]
-sqlize-core = { path = "crates/sqlize-core", version = "0.1.0" }
+sqlize-core = { path = "crates/sqlize-core", version = "0.2.0" }
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

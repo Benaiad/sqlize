@@ -3283,7 +3283,7 @@ dependencies = [
 
 [[package]]
 name = "sqlize"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -3305,7 +3305,7 @@ dependencies = [
 
 [[package]]
 name = "sqlize-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "datafusion",
