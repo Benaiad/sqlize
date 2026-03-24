@@ -210,15 +210,24 @@ Path parameters are required — omitting them fails at query planning, before a
 
 ## Pagination
 
-Queries without `LIMIT` return a single page of results (whatever the API's default page size is). Add `LIMIT` to fetch across multiple pages automatically:
+sqlize paginates automatically using the standard `Link` header (`rel="next"`) or common response body fields (`next`, `next_url`). This works with GitHub, GitLab, Stripe, and most REST APIs without configuration.
 
-```sql
-SELECT number, title FROM issues
-WHERE owner = 'rust-lang' AND repo = 'rust'
-LIMIT 250;
+Each table scan fetches pages lazily until one of these limits is reached:
+
+- **SQL `LIMIT`** — when DataFusion can push it down (simple queries), only the needed pages are fetched
+- **`max_rows`** (default 1000) — caps total rows per table scan when no SQL `LIMIT` applies (e.g. JOINs, aggregations, or queries without `LIMIT`)
+
+The current page always completes, so actual row count may slightly exceed the cap.
+
+Override the default:
+
+```sh
+# CLI flag (one-off)
+sqlize --spec specs/github.json --max-rows 5000
+
+# Environment variable (persistent)
+export SQLIZE_MAX_ROWS=5000
 ```
-
-sqlize follows pagination using the standard `Link` header (`rel="next"`) or common response body fields (`next`, `next_url`). This works with GitHub, GitLab, Stripe, and most REST APIs without configuration.
 
 ## Why SQL
 
