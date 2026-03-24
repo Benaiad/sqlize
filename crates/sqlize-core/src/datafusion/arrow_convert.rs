@@ -135,11 +135,23 @@ pub fn json_response_to_batch(
 }
 
 /// Extract a scalar value from a JSON item for a given column.
+///
+/// Path params always use the pushed value (the user's WHERE clause),
+/// not the response field — even if the response has a field with the
+/// same name (e.g., `owner` is both a path param and a nested user object).
 fn extract_value(
     item: &serde_json::Value,
     col: &Column,
     param_values: &HashMap<ColumnName, String>,
 ) -> Scalar {
+    // Path params: always use the pushed value
+    if col.role.is_required() {
+        if let Some(v) = param_values.get(&col.name) {
+            return Scalar::String(v.clone());
+        }
+    }
+
+    // Response fields: check JSON first, fall back to param values
     if let Some(map) = item.as_object() {
         let col_name = col.name.as_str();
         if let Some(v) = find_in_json(map, col_name) {
