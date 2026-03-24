@@ -18,10 +18,16 @@ pub struct ApiSchemaProvider {
     tables: HashMap<String, VirtualTable>,
     auth: AuthConfig,
     client: reqwest::Client,
+    max_rows: usize,
 }
 
 impl ApiSchemaProvider {
-    pub fn new(catalog: &Catalog, auth: AuthConfig, client: reqwest::Client) -> Self {
+    pub fn new(
+        catalog: &Catalog,
+        auth: AuthConfig,
+        client: reqwest::Client,
+        max_rows: usize,
+    ) -> Self {
         let tables: HashMap<String, VirtualTable> = catalog
             .tables()
             .map(|t| (t.name.as_str().to_owned(), t.clone()))
@@ -30,6 +36,7 @@ impl ApiSchemaProvider {
             tables,
             auth,
             client,
+            max_rows,
         }
     }
 }
@@ -52,8 +59,12 @@ impl SchemaProvider for ApiSchemaProvider {
     ) -> datafusion::common::Result<Option<Arc<dyn TableProvider>>> {
         match self.tables.get(name) {
             Some(vt) => {
-                let provider =
-                    ApiTableProvider::new(vt.clone(), self.auth.clone(), self.client.clone());
+                let provider = ApiTableProvider::new(
+                    vt.clone(),
+                    self.auth.clone(),
+                    self.client.clone(),
+                    self.max_rows,
+                );
                 Ok(Some(Arc::new(provider)))
             }
             None => Ok(None),

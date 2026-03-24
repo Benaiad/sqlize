@@ -8,7 +8,7 @@ use clap::{Parser, Subcommand};
 
 use rmcp::ServiceExt;
 use sqlize_core::catalog::Catalog;
-use sqlize_core::datafusion::SqlizeContext;
+use sqlize_core::datafusion::{DEFAULT_MAX_ROWS, SqlizeContext};
 use sqlize_core::exec::AuthConfig;
 use sqlize_core::spec::SpecInfo;
 
@@ -29,6 +29,10 @@ struct Cli {
     /// Output format for query results
     #[arg(short, long, default_value = "table", global = true)]
     format: repl::OutputFormat,
+
+    /// Max rows fetched per table scan when no SQL LIMIT is specified
+    #[arg(long, global = true)]
+    max_rows: Option<usize>,
 }
 
 #[derive(Subcommand)]
@@ -172,7 +176,16 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let client = sqlize_core::exec::Client::new();
-    let sqlize_ctx = Arc::new(SqlizeContext::new());
+
+    // Resolve max_rows: CLI flag > env var > default
+    let max_rows = cli.max_rows.unwrap_or_else(|| {
+        std::env::var("SQLIZE_MAX_ROWS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(DEFAULT_MAX_ROWS)
+    });
+
+    let sqlize_ctx = Arc::new(SqlizeContext::new(max_rows));
     let is_single_spec = specs.len() == 1;
 
     // Register each spec as a named schema

@@ -24,6 +24,7 @@ pub struct ApiTableProvider {
     schema: SchemaRef,
     auth: AuthConfig,
     client: reqwest::Client,
+    max_rows: usize,
 }
 
 impl fmt::Debug for ApiTableProvider {
@@ -35,13 +36,19 @@ impl fmt::Debug for ApiTableProvider {
 }
 
 impl ApiTableProvider {
-    pub fn new(table: VirtualTable, auth: AuthConfig, client: reqwest::Client) -> Self {
+    pub fn new(
+        table: VirtualTable,
+        auth: AuthConfig,
+        client: reqwest::Client,
+        max_rows: usize,
+    ) -> Self {
         let schema = virtual_table_to_schema(&table);
         Self {
             table,
             schema,
             auth,
             client,
+            max_rows,
         }
     }
 }
@@ -113,12 +120,15 @@ impl TableProvider for ApiTableProvider {
             }
         }
 
+        // Use DataFusion's pushed-down limit if available, otherwise use max_rows.
+        let effective_limit = limit.unwrap_or(self.max_rows);
+
         let exec = ApiTableExec::new(
             self.table.clone(),
             self.schema.clone(),
             params,
             projection.cloned(),
-            limit,
+            effective_limit,
             self.auth.clone(),
             self.client.clone(),
         );
@@ -136,11 +146,7 @@ fn classify_filter(table: &VirtualTable, expr: &Expr) -> TableProviderFilterPush
                     ColumnRole::PathParam | ColumnRole::QueryParam => {
                         TableProviderFilterPushDown::Exact
                     }
-                    ColumnRole::QueryParamAndResponse => {
-                        // DataFusion should also evaluate this locally since the
-                        // API may return items that don't match (e.g., paginated results)
-                        TableProviderFilterPushDown::Inexact
-                    }
+                    ColumnRole::QueryParamAndResponse => TableProviderFilterPushDown::Inexact,
                     _ => TableProviderFilterPushDown::Unsupported,
                 };
             }

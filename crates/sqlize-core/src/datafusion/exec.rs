@@ -20,10 +20,6 @@ use crate::exec::pagination;
 
 use super::arrow_convert::json_response_to_batch;
 
-/// Maximum number of HTTP requests (pages) per table scan.
-/// At ~30 rows per page (GitHub default), this yields ~1500 rows.
-const MAX_PAGES: usize = 50;
-
 /// A custom DataFusion `ExecutionPlan` that fetches data from a REST API.
 /// Returns a lazy stream that fetches one page per `poll_next()`.
 #[derive(Debug)]
@@ -33,7 +29,7 @@ pub struct ApiTableExec {
     projected_schema: SchemaRef,
     params: HashMap<String, String>,
     projection: Option<Vec<usize>>,
-    limit: Option<usize>,
+    max_rows: usize,
     auth: AuthConfig,
     client: reqwest::Client,
     properties: PlanProperties,
@@ -45,7 +41,7 @@ impl ApiTableExec {
         full_schema: SchemaRef,
         params: HashMap<String, String>,
         projection: Option<Vec<usize>>,
-        limit: Option<usize>,
+        max_rows: usize,
         auth: AuthConfig,
         client: reqwest::Client,
     ) -> Self {
@@ -73,7 +69,7 @@ impl ApiTableExec {
             projected_schema,
             params,
             projection,
-            limit,
+            max_rows,
             auth,
             client,
             properties,
@@ -129,7 +125,7 @@ impl ExecutionPlan for ApiTableExec {
         let projected_schema = self.projected_schema.clone();
         let params = self.params.clone();
         let projection = self.projection.clone();
-        let limit = self.limit;
+        let max_rows = self.max_rows;
         let auth = self.auth.clone();
         let client = self.client.clone();
 
@@ -150,8 +146,7 @@ impl ExecutionPlan for ApiTableExec {
             next_url: Option<String>,
             is_first_page: bool,
             total_rows: usize,
-            pages_fetched: usize,
-            row_limit: Option<usize>,
+            max_rows: usize,
             table: VirtualTable,
             full_schema: SchemaRef,
             params: HashMap<String, String>,
@@ -165,8 +160,7 @@ impl ExecutionPlan for ApiTableExec {
             next_url: Some(first_url),
             is_first_page: true,
             total_rows: 0,
-            pages_fetched: 0,
-            row_limit: limit,
+            max_rows,
             table,
             full_schema,
             params,
@@ -179,19 +173,11 @@ impl ExecutionPlan for ApiTableExec {
         let stream = futures::stream::unfold(initial_state, |mut state| async move {
             let url = state.next_url.take()?;
 
-            if state.pages_fetched >= MAX_PAGES {
-                tracing::warn!(
-                    table = %state.table.name,
-                    pages = state.pages_fetched,
-                    "reached MAX_PAGES limit, stopping pagination"
-                );
+            // Stop if we've already fetched enough rows.
+            // We check >= rather than > so that the current page that pushed us
+            // over the limit is still returned (the caller's LIMIT will trim).
+            if state.total_rows >= state.max_rows {
                 return None;
-            }
-
-            if let Some(limit) = state.row_limit {
-                if state.total_rows >= limit {
-                    return None;
-                }
             }
 
             let (body, headers) = match fetch_page(
@@ -230,7 +216,6 @@ impl ExecutionPlan for ApiTableExec {
             };
 
             state.total_rows += batch.num_rows();
-            state.pages_fetched += 1;
 
             // Determine next page
             let ctx = pagination::PageContext {

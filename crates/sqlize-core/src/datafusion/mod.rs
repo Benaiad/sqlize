@@ -15,32 +15,35 @@ use crate::exec::AuthConfig;
 use self::arrow_convert::batches_to_result_set;
 use self::schema::ApiSchemaProvider;
 
+/// Default maximum rows fetched per table scan when no SQL LIMIT is specified.
+/// Overridable via `SQLIZE_MAX_ROWS` env var or `--max-rows` CLI flag.
+pub const DEFAULT_MAX_ROWS: usize = 1000;
+
 /// The main entry point for executing SQL against REST APIs via DataFusion.
 ///
 /// Wraps a DataFusion `SessionContext` with registered API table providers.
 /// Supports multiple specs (schemas) for federated queries.
 pub struct SqlizeContext {
     ctx: SessionContext,
+    max_rows: usize,
 }
 
 impl Default for SqlizeContext {
     fn default() -> Self {
-        Self::new()
+        Self::new(DEFAULT_MAX_ROWS)
     }
 }
 
 impl SqlizeContext {
-    pub fn new() -> Self {
+    pub fn new(max_rows: usize) -> Self {
         let config = SessionConfig::new()
             .with_information_schema(false)
             .with_default_catalog_and_schema("sqlize", "default");
         let ctx = SessionContext::new_with_config(config);
-        Self { ctx }
+        Self { ctx, max_rows }
     }
 
     /// Register a spec's tables under the given schema name.
-    /// If `is_default` is true, sets this schema as the default so bare table
-    /// names resolve to it.
     pub fn register_spec(
         &self,
         schema_name: &str,
@@ -48,7 +51,8 @@ impl SqlizeContext {
         auth: AuthConfig,
         client: reqwest::Client,
     ) -> Result<()> {
-        let schema_provider = Arc::new(ApiSchemaProvider::new(catalog, auth, client));
+        let schema_provider =
+            Arc::new(ApiSchemaProvider::new(catalog, auth, client, self.max_rows));
 
         let df_catalog = self
             .ctx
