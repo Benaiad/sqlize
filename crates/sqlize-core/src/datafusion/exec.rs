@@ -4,7 +4,6 @@ use std::fmt;
 use std::sync::Arc;
 
 use datafusion::arrow::datatypes::{Schema, SchemaRef};
-use datafusion::arrow::record_batch::RecordBatch;
 use datafusion::common::DataFusionError;
 use datafusion::execution::SendableRecordBatchStream;
 use datafusion::physical_expr::EquivalenceProperties;
@@ -21,10 +20,12 @@ use crate::exec::pagination;
 
 use super::arrow_convert::json_response_to_batch;
 
-/// Hard cap on total rows fetched.
-const MAX_ROWS: usize = 10_000;
+/// Maximum number of HTTP requests (pages) per table scan.
+/// At ~30 rows per page (GitHub default), this yields ~1500 rows.
+const MAX_PAGES: usize = 50;
 
 /// A custom DataFusion `ExecutionPlan` that fetches data from a REST API.
+/// Returns a lazy stream that fetches one page per `poll_next()`.
 #[derive(Debug)]
 pub struct ApiTableExec {
     table: VirtualTable,
@@ -62,7 +63,7 @@ impl ApiTableExec {
         let properties = PlanProperties::new(
             EquivalenceProperties::new(projected_schema.clone()),
             Partitioning::UnknownPartitioning(1),
-            EmissionType::Final,
+            EmissionType::Incremental,
             Boundedness::Bounded,
         );
 
@@ -132,99 +133,122 @@ impl ExecutionPlan for ApiTableExec {
         let auth = self.auth.clone();
         let client = self.client.clone();
 
-        let stream = futures::stream::once(async move {
-            fetch_all(
-                &table,
-                &full_schema,
-                &params,
-                projection.as_deref(),
-                limit,
-                &auth,
-                &client,
+        let first_url = resolve_url(&table, &params)?;
+
+        let param_values: HashMap<ColumnName, String> = table
+            .columns
+            .iter()
+            .filter(|c| c.role.is_pushable())
+            .filter_map(|c| {
+                let api_key = c.api_param_key();
+                params.get(api_key).map(|v| (c.name.clone(), v.clone()))
+            })
+            .collect();
+
+        // State for the lazy pagination stream
+        struct PageState {
+            next_url: Option<String>,
+            is_first_page: bool,
+            total_rows: usize,
+            pages_fetched: usize,
+            row_limit: Option<usize>,
+            table: VirtualTable,
+            full_schema: SchemaRef,
+            params: HashMap<String, String>,
+            param_values: HashMap<ColumnName, String>,
+            projection: Option<Vec<usize>>,
+            auth: AuthConfig,
+            client: reqwest::Client,
+        }
+
+        let initial_state = PageState {
+            next_url: Some(first_url),
+            is_first_page: true,
+            total_rows: 0,
+            pages_fetched: 0,
+            row_limit: limit,
+            table,
+            full_schema,
+            params,
+            param_values,
+            projection,
+            auth,
+            client,
+        };
+
+        let stream = futures::stream::unfold(initial_state, |mut state| async move {
+            let url = state.next_url.take()?;
+
+            if state.pages_fetched >= MAX_PAGES {
+                tracing::warn!(
+                    table = %state.table.name,
+                    pages = state.pages_fetched,
+                    "reached MAX_PAGES limit, stopping pagination"
+                );
+                return None;
+            }
+
+            if let Some(limit) = state.row_limit {
+                if state.total_rows >= limit {
+                    return None;
+                }
+            }
+
+            let (body, headers) = match fetch_page(
+                &state.client,
+                &state.auth,
+                &state.table,
+                &state.params,
+                &url,
+                state.is_first_page,
             )
             .await
+            {
+                Ok(r) => r,
+                Err(e) => return Some((Err(e), state)),
+            };
+
+            let data = unwrap_response(&body, &state.table.endpoint.data_path);
+
+            let batch = match json_response_to_batch(
+                data,
+                &state.table.columns,
+                &state.param_values,
+                &state.full_schema,
+            ) {
+                Ok(b) => b,
+                Err(e) => return Some((Err(e), state)),
+            };
+
+            // Apply projection
+            let batch = match &state.projection {
+                Some(indices) => match batch.project(indices) {
+                    Ok(b) => b,
+                    Err(e) => return Some((Err(DataFusionError::External(Box::new(e))), state)),
+                },
+                None => batch,
+            };
+
+            state.total_rows += batch.num_rows();
+            state.pages_fetched += 1;
+
+            // Determine next page
+            let ctx = pagination::PageContext {
+                headers: &headers,
+                body: &body,
+                data,
+                current_url: &url,
+            };
+            state.next_url = pagination::next_page(&ctx);
+            state.is_first_page = false;
+
+            Some((Ok(batch), state))
         });
 
         Ok(Box::pin(RecordBatchStreamAdapter::new(
             projected_schema,
             stream,
         )))
-    }
-}
-
-async fn fetch_all(
-    table: &VirtualTable,
-    full_schema: &SchemaRef,
-    params: &HashMap<String, String>,
-    projection: Option<&[usize]>,
-    limit: Option<usize>,
-    auth: &AuthConfig,
-    client: &reqwest::Client,
-) -> Result<RecordBatch, DataFusionError> {
-    let first_url = resolve_url(table, params)?;
-
-    let param_values: HashMap<ColumnName, String> = table
-        .columns
-        .iter()
-        .filter(|c| c.role.is_pushable())
-        .filter_map(|c| {
-            let api_key = c.api_param_key();
-            params.get(api_key).map(|v| (c.name.clone(), v.clone()))
-        })
-        .collect();
-
-    let (rows_needed, paginate) = match limit {
-        Some(l) => (l.min(MAX_ROWS), true),
-        None => (usize::MAX, false),
-    };
-
-    let mut all_batches: Vec<RecordBatch> = Vec::new();
-    let mut total_rows = 0usize;
-    let mut next_url: Option<String> = Some(first_url);
-    let mut is_first_page = true;
-
-    while let Some(url) = next_url.take() {
-        let (body, headers) = fetch_page(client, auth, table, params, &url, is_first_page).await?;
-
-        let data = unwrap_response(&body, &table.endpoint.data_path);
-
-        let batch = json_response_to_batch(data, &table.columns, &param_values, full_schema)?;
-
-        total_rows += batch.num_rows();
-        all_batches.push(batch);
-
-        if !paginate {
-            break;
-        }
-
-        if total_rows >= rows_needed {
-            break;
-        }
-
-        let ctx = pagination::PageContext {
-            headers: &headers,
-            body: &body,
-            data,
-            current_url: &url,
-        };
-        next_url = pagination::next_page(&ctx);
-        is_first_page = false;
-    }
-
-    // Concatenate all batches
-    let combined = if all_batches.is_empty() {
-        RecordBatch::new_empty(full_schema.clone())
-    } else {
-        datafusion::arrow::compute::concat_batches(full_schema, &all_batches)
-            .map_err(|e| DataFusionError::External(Box::new(e)))?
-    };
-
-    // Apply projection
-    match projection {
-        Some(indices) => combined
-            .project(indices)
-            .map_err(|e| DataFusionError::External(Box::new(e))),
-        None => Ok(combined),
     }
 }
 
