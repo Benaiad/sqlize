@@ -367,8 +367,60 @@ impl Completer for SqlCompleter {
 // ---------------------------------------------------------------------------
 
 pub async fn run(catalog_set: Arc<CatalogSet>, ctx: Arc<SqlizeContext>, format: OutputFormat) {
-    eprintln!("Type SQL (end with ;), or: SHOW TABLES, DESCRIBE <table>, EXPLAIN <sql>");
-    eprintln!("Ctrl+D to exit.\n");
+    eprintln!("Commands: SHOW TABLES, DESCRIBE <table>, EXPLAIN <query>");
+    eprintln!("SQL ends with ; | Tab to complete | Ctrl+D to exit");
+
+    // Show a sample query — prefer tables named issues, pulls, or orgs_repos
+    let all = catalog_set.all_tables();
+    let preferred = [
+        "issues",
+        "pulls",
+        "orgs_repos",
+        "repos",
+        "commits",
+        "customers",
+    ];
+    let sample_table = preferred
+        .iter()
+        .find_map(|name| all.iter().find(|(_, t)| t.name.as_str() == *name))
+        .or_else(|| {
+            all.iter().find(|(_, t)| {
+                t.required_params().next().is_some() && t.result_columns().nth(1).is_some()
+            })
+        });
+    if let Some((_, table)) = sample_table {
+        let params: Vec<String> = table
+            .required_params()
+            .map(|c| format!("{} = '...'", c.name))
+            .collect();
+        let cols: Vec<&str> = table
+            .columns
+            .iter()
+            .filter(|c| {
+                matches!(
+                    c.role,
+                    sqlize_core::catalog::types::ColumnRole::ResponseField
+                )
+            })
+            .take(3)
+            .map(|c| c.name.as_str())
+            .collect();
+        if params.is_empty() {
+            eprintln!(
+                "\nTry:  SELECT {} FROM {} LIMIT 5;",
+                cols.join(", "),
+                table.name,
+            );
+        } else {
+            eprintln!(
+                "\nTry:  SELECT {} FROM {} WHERE {} LIMIT 5;",
+                cols.join(", "),
+                table.name,
+                params.join(" AND "),
+            );
+        }
+    }
+    eprintln!();
 
     let history_file = history_path();
     if let Some(parent) = history_file.parent() {

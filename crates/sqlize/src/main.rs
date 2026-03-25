@@ -13,7 +13,15 @@ use sqlize_core::exec::AuthConfig;
 use sqlize_core::spec::SpecInfo;
 
 #[derive(Parser)]
-#[command(name = "sqlize", about = "SQL interface for REST APIs")]
+#[command(
+    name = "sqlize",
+    about = "SQL interface for REST APIs",
+    version,
+    after_help = "Examples:\n  \
+        sqlize --spec specs/github-minimal.json\n  \
+        sqlize --spec specs/github-minimal.json query \"SELECT name FROM orgs_repos WHERE org = 'rust-lang' LIMIT 5\"\n  \
+        sqlize --spec github:specs/github.json --spec stripe:specs/stripe.json"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Command>,
@@ -285,6 +293,7 @@ async fn main() -> anyhow::Result<()> {
         }
         None => {
             // Print banner
+            eprintln!("sqlize v{}", env!("CARGO_PKG_VERSION"));
             if is_single_spec {
                 let spec = &specs[0];
                 eprintln!(
