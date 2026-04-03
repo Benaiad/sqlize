@@ -83,16 +83,18 @@ fn cursor_based(ctx: &PageContext<'_>) -> Option<String> {
     // Determine the cursor parameter name from the response shape
     let cursor_param = detect_cursor_param(obj);
 
-    // Append cursor to URL
-    let separator = if ctx.current_url.contains('?') {
-        "&"
-    } else {
-        "?"
-    };
-    Some(format!(
-        "{}{separator}{cursor_param}={cursor}",
-        ctx.current_url
-    ))
+    // Build next URL, replacing any existing cursor param
+    let mut url = reqwest::Url::parse(ctx.current_url).ok()?;
+    let existing: Vec<(String, String)> = url
+        .query_pairs()
+        .filter(|(k, _)| k != cursor_param)
+        .map(|(k, v)| (k.into_owned(), v.into_owned()))
+        .collect();
+    url.query_pairs_mut()
+        .clear()
+        .extend_pairs(&existing)
+        .append_pair(cursor_param, &cursor);
+    Some(url.into())
 }
 
 /// Look for an explicit cursor/token in the response body.
@@ -222,6 +224,42 @@ mod tests {
             next_page(&ctx).as_deref(),
             Some("https://api.stripe.com/v1/customers?starting_after=cus_3")
         );
+    }
+
+    #[test]
+    fn cursor_based_replaces_existing_cursor() {
+        let headers = empty_headers();
+        let body = serde_json::json!({
+            "data": [
+                {"id": "cus_4", "email": "d@example.com"},
+                {"id": "cus_5", "email": "e@example.com"},
+            ],
+            "has_more": true,
+            "url": "/v1/customers"
+        });
+        let data = &body["data"];
+        // Simulate page 2→3: URL already has starting_after from the previous cursor
+        let ctx = PageContext {
+            headers: &headers,
+            body: &body,
+            data,
+            current_url: "https://api.stripe.com/v1/customers?state=active&starting_after=cus_3",
+        };
+        let next = next_page(&ctx).unwrap();
+        let url = reqwest::Url::parse(&next).unwrap();
+        let params: Vec<(String, String)> = url
+            .query_pairs()
+            .map(|(k, v)| (k.into_owned(), v.into_owned()))
+            .collect();
+        // Exactly one starting_after, with the new value
+        let cursors: Vec<_> = params
+            .iter()
+            .filter(|(k, _)| k == "starting_after")
+            .collect();
+        assert_eq!(cursors.len(), 1);
+        assert_eq!(cursors[0].1, "cus_5");
+        // Original query params are preserved
+        assert!(params.iter().any(|(k, v)| k == "state" && v == "active"));
     }
 
     #[test]

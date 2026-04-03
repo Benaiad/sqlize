@@ -22,8 +22,14 @@ pub enum Error {
     DuplicateTable(TableName),
 
     // ---- SQL / DataFusion ----
-    #[error("unsupported SQL: {0}")]
-    UnsupportedSql(String),
+    #[error("SQL error: {0}")]
+    SqlError(String),
+
+    #[error("query execution failed: {0}")]
+    QueryExecutionError(String),
+
+    #[error("catalog registration failed: {0}")]
+    CatalogRegistrationError(String),
 
     // ---- OpenAPI spec loading ----
     #[error("failed to read spec {path}: {message}")]

@@ -9,7 +9,7 @@ use clap::{Parser, Subcommand};
 use rmcp::ServiceExt;
 use sqlize_core::catalog::Catalog;
 use sqlize_core::datafusion::{DEFAULT_MAX_ROWS, SqlizeContext};
-use sqlize_core::exec::AuthConfig;
+use sqlize_core::http::AuthConfig;
 use sqlize_core::spec::SpecInfo;
 
 #[derive(Parser)]
@@ -183,7 +183,7 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
-    let client = sqlize_core::exec::Client::new();
+    let client = sqlize_core::http::build_client(sqlize_core::http::DEFAULT_TIMEOUT);
 
     // Resolve max_rows: CLI flag > env var > default
     let max_rows = cli.max_rows.unwrap_or_else(|| {

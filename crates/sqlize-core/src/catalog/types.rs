@@ -402,6 +402,30 @@ pub enum Scalar {
     Json(serde_json::Value),
 }
 
+impl Scalar {
+    /// Parse a string value into a Scalar of the given column type.
+    /// Used for filter pushdown values (WHERE col = 'value').
+    pub fn parse(s: &str, col_type: ColumnType) -> Self {
+        match col_type {
+            ColumnType::Integer => s
+                .parse::<i64>()
+                .map(Scalar::Integer)
+                .unwrap_or_else(|_| Scalar::String(s.to_owned())),
+            ColumnType::Float => s
+                .parse::<f64>()
+                .map(Scalar::Float)
+                .unwrap_or_else(|_| Scalar::String(s.to_owned())),
+            ColumnType::Boolean => s
+                .parse::<bool>()
+                .map(Scalar::Boolean)
+                .unwrap_or_else(|_| Scalar::String(s.to_owned())),
+            ColumnType::String | ColumnType::Timestamp | ColumnType::Json => {
+                Scalar::String(s.to_owned())
+            }
+        }
+    }
+}
+
 impl fmt::Display for Scalar {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {

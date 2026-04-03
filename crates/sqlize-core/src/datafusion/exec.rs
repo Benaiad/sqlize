@@ -14,9 +14,9 @@ use datafusion::physical_plan::{
 };
 use reqwest::header::{ACCEPT, AUTHORIZATION, USER_AGENT};
 
-use crate::catalog::types::{ColumnName, VirtualTable};
-use crate::exec::AuthConfig;
-use crate::exec::pagination;
+use crate::catalog::types::{ColumnName, Scalar, VirtualTable};
+use crate::http::AuthConfig;
+use crate::http::pagination;
 
 use super::arrow_convert::json_response_to_batch;
 
@@ -24,7 +24,7 @@ use super::arrow_convert::json_response_to_batch;
 /// Returns a lazy stream that fetches one page per `poll_next()`.
 #[derive(Debug)]
 pub struct ApiTableExec {
-    table: VirtualTable,
+    table: Arc<VirtualTable>,
     full_schema: SchemaRef,
     projected_schema: SchemaRef,
     params: HashMap<String, String>,
@@ -37,7 +37,7 @@ pub struct ApiTableExec {
 
 impl ApiTableExec {
     pub fn new(
-        table: VirtualTable,
+        table: Arc<VirtualTable>,
         full_schema: SchemaRef,
         params: HashMap<String, String>,
         projection: Option<Vec<usize>>,
@@ -131,13 +131,15 @@ impl ExecutionPlan for ApiTableExec {
 
         let first_url = resolve_url(&table, &params)?;
 
-        let param_values: HashMap<ColumnName, String> = table
+        let param_values: HashMap<ColumnName, Scalar> = table
             .columns
             .iter()
             .filter(|c| c.role.is_pushable())
             .filter_map(|c| {
                 let api_key = c.api_param_key();
-                params.get(api_key).map(|v| (c.name.clone(), v.clone()))
+                params
+                    .get(api_key)
+                    .map(|v| (c.name.clone(), Scalar::parse(v, c.col_type)))
             })
             .collect();
 
@@ -147,10 +149,10 @@ impl ExecutionPlan for ApiTableExec {
             is_first_page: bool,
             total_rows: usize,
             max_rows: usize,
-            table: VirtualTable,
+            table: Arc<VirtualTable>,
             full_schema: SchemaRef,
             params: HashMap<String, String>,
-            param_values: HashMap<ColumnName, String>,
+            param_values: HashMap<ColumnName, Scalar>,
             projection: Option<Vec<usize>>,
             auth: AuthConfig,
             client: reqwest::Client,
@@ -269,7 +271,7 @@ async fn fetch_page(
     let mut request = client
         .get(url)
         .header(ACCEPT, &table.endpoint.accept)
-        .header(USER_AGENT, "sqlize/0.1.0");
+        .header(USER_AGENT, concat!("sqlize/", env!("CARGO_PKG_VERSION")));
 
     if let Some(token) = &auth.bearer_token {
         request = request.header(AUTHORIZATION, format!("Bearer {token}"));

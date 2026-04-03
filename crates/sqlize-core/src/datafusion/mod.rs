@@ -10,7 +10,7 @@ use datafusion::prelude::*;
 use crate::catalog::Catalog;
 use crate::catalog::types::ResultSet;
 use crate::error::{Error, Result};
-use crate::exec::AuthConfig;
+use crate::http::AuthConfig;
 
 use self::arrow_convert::batches_to_result_set;
 use self::schema::ApiSchemaProvider;
@@ -57,11 +57,13 @@ impl SqlizeContext {
         let df_catalog = self
             .ctx
             .catalog("sqlize")
-            .ok_or_else(|| Error::UnsupportedSql("internal: missing default catalog".into()))?;
+            .ok_or_else(|| Error::CatalogRegistrationError("missing default catalog".into()))?;
 
         df_catalog
             .register_schema(schema_name, schema_provider)
-            .map_err(|e| Error::UnsupportedSql(format!("failed to register schema: {e}")))?;
+            .map_err(|e| {
+                Error::CatalogRegistrationError(format!("failed to register schema: {e}"))
+            })?;
 
         Ok(())
     }
@@ -72,12 +74,12 @@ impl SqlizeContext {
             .ctx
             .sql(sql)
             .await
-            .map_err(|e| Error::UnsupportedSql(e.to_string()))?;
+            .map_err(|e| Error::SqlError(e.to_string()))?;
 
         let batches = df
             .collect()
             .await
-            .map_err(|e| Error::UnsupportedSql(e.to_string()))?;
+            .map_err(|e| Error::QueryExecutionError(e.to_string()))?;
 
         Ok(batches_to_result_set(&batches))
     }
@@ -88,12 +90,12 @@ impl SqlizeContext {
             .ctx
             .sql(&format!("EXPLAIN {sql}"))
             .await
-            .map_err(|e| Error::UnsupportedSql(e.to_string()))?;
+            .map_err(|e| Error::SqlError(e.to_string()))?;
 
         let batches = df
             .collect()
             .await
-            .map_err(|e| Error::UnsupportedSql(e.to_string()))?;
+            .map_err(|e| Error::QueryExecutionError(e.to_string()))?;
 
         let result = batches_to_result_set(&batches);
         let mut out = String::new();

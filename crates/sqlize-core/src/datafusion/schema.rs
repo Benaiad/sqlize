@@ -8,14 +8,14 @@ use datafusion::datasource::TableProvider;
 
 use crate::catalog::Catalog;
 use crate::catalog::types::VirtualTable;
-use crate::exec::AuthConfig;
+use crate::http::AuthConfig;
 
 use super::provider::ApiTableProvider;
 
 /// A DataFusion `SchemaProvider` that exposes all tables from a single API spec.
 #[derive(Debug)]
 pub struct ApiSchemaProvider {
-    tables: HashMap<String, VirtualTable>,
+    tables: HashMap<String, Arc<VirtualTable>>,
     auth: AuthConfig,
     client: reqwest::Client,
     max_rows: usize,
@@ -28,9 +28,9 @@ impl ApiSchemaProvider {
         client: reqwest::Client,
         max_rows: usize,
     ) -> Self {
-        let tables: HashMap<String, VirtualTable> = catalog
+        let tables: HashMap<String, Arc<VirtualTable>> = catalog
             .tables()
-            .map(|t| (t.name.as_str().to_owned(), t.clone()))
+            .map(|t| (t.name.as_str().to_owned(), Arc::new(t.clone())))
             .collect();
         Self {
             tables,
@@ -60,7 +60,7 @@ impl SchemaProvider for ApiSchemaProvider {
         match self.tables.get(name) {
             Some(vt) => {
                 let provider = ApiTableProvider::new(
-                    vt.clone(),
+                    Arc::clone(vt),
                     self.auth.clone(),
                     self.client.clone(),
                     self.max_rows,
