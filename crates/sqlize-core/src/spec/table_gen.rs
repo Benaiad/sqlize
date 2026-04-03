@@ -165,7 +165,7 @@ fn try_build_table(
             method: HttpMethod::Get,
             path: path_template,
             base_url: base_url.clone(),
-            accept: crate::catalog::types::AcceptHeader::new(content_type),
+            accept: crate::catalog::types::AcceptHeader::new(content_type)?,
             response_wrapper_key: wrapper_key,
         },
     }))

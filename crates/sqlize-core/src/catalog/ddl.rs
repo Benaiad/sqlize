@@ -114,7 +114,7 @@ mod tests {
                 method: HttpMethod::Get,
                 path: PathTemplate::new("/repos/{owner}/{repo}/issues").unwrap(),
                 base_url: BaseUrl::new("https://api.github.com").unwrap(),
-                accept: AcceptHeader::new("application/json"),
+                accept: AcceptHeader::new("application/json").unwrap(),
                 response_wrapper_key: None,
             },
         }

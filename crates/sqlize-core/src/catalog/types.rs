@@ -316,10 +316,15 @@ impl fmt::Display for HttpMethod {
 pub struct AcceptHeader(String);
 
 impl AcceptHeader {
-    pub fn new(s: impl Into<String>) -> Self {
+    pub fn new(s: impl Into<String>) -> Result<Self, Error> {
         let s = s.into();
-        assert!(!s.is_empty(), "AcceptHeader cannot be empty");
-        Self(s)
+        if s.is_empty() {
+            return Err(Error::InvalidAcceptHeader {
+                input: s,
+                reason: "cannot be empty",
+            });
+        }
+        Ok(Self(s))
     }
 
     pub fn as_str(&self) -> &str {

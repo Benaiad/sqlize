@@ -20,6 +20,9 @@ pub enum Error {
     #[error("invalid base URL {input:?}: {reason}")]
     InvalidBaseUrl { input: String, reason: &'static str },
 
+    #[error("invalid accept header {input:?}: {reason}")]
+    InvalidAcceptHeader { input: String, reason: &'static str },
+
     // ---- Catalog lookup ----
     #[error("table {0} not found in catalog")]
     TableNotFound(TableName),
