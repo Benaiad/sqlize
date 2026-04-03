@@ -391,76 +391,38 @@ pub fn truncate_str(s: &str, max_chars: usize) -> String {
 // Result types
 // ---------------------------------------------------------------------------
 
-/// A single scalar value in a result row.
-#[derive(Debug, Clone, PartialEq)]
-pub enum Scalar {
-    Null,
-    String(String),
-    Integer(i64),
-    Float(f64),
-    Boolean(bool),
-    Json(serde_json::Value),
-}
+pub use datafusion::common::ScalarValue;
 
-impl Scalar {
-    /// Parse a string value into a Scalar of the given column type.
-    /// Used for filter pushdown values (WHERE col = 'value').
-    pub fn parse(s: &str, col_type: ColumnType) -> Self {
-        match col_type {
-            ColumnType::Integer => s
-                .parse::<i64>()
-                .map(Scalar::Integer)
-                .unwrap_or_else(|_| Scalar::String(s.to_owned())),
-            ColumnType::Float => s
-                .parse::<f64>()
-                .map(Scalar::Float)
-                .unwrap_or_else(|_| Scalar::String(s.to_owned())),
-            ColumnType::Boolean => s
-                .parse::<bool>()
-                .map(Scalar::Boolean)
-                .unwrap_or_else(|_| Scalar::String(s.to_owned())),
-            ColumnType::String | ColumnType::Timestamp | ColumnType::Json => {
-                Scalar::String(s.to_owned())
-            }
-        }
-    }
-}
-
-impl fmt::Display for Scalar {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::Null => write!(f, "NULL"),
-            Self::String(s) => write!(f, "{s}"),
-            Self::Integer(n) => write!(f, "{n}"),
-            Self::Float(n) => write!(f, "{n}"),
-            Self::Boolean(b) => write!(f, "{b}"),
-            Self::Json(v) => write!(f, "{v}"),
-        }
+/// Format a `ScalarValue` for display, handling timestamp types that
+/// `ScalarValue::Display` renders as raw i64 instead of ISO 8601.
+pub fn format_scalar(v: &ScalarValue) -> String {
+    match v {
+        ScalarValue::TimestampMicrosecond(Some(_), _)
+        | ScalarValue::TimestampSecond(Some(_), _)
+        | ScalarValue::TimestampMillisecond(Some(_), _)
+        | ScalarValue::TimestampNanosecond(Some(_), _) => v
+            .to_array()
+            .ok()
+            .and_then(|arr| datafusion::arrow::util::display::array_value_to_string(&arr, 0).ok())
+            .unwrap_or_else(|| v.to_string()),
+        _ => v.to_string(),
     }
 }
 
 /// A row of values, ordered to match `ResultSet.columns`.
 #[derive(Debug, Clone)]
-pub struct Row(Vec<Scalar>);
+pub struct Row(Vec<ScalarValue>);
 
 impl Row {
-    pub fn new(values: Vec<Scalar>) -> Self {
+    pub fn new(values: Vec<ScalarValue>) -> Self {
         Self(values)
     }
 
-    pub fn get(&self, idx: usize) -> Option<&Scalar> {
+    pub fn get(&self, idx: usize) -> Option<&ScalarValue> {
         self.0.get(idx)
     }
 
-    pub fn len(&self) -> usize {
-        self.0.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-
-    pub fn values(&self) -> &[Scalar] {
+    pub fn values(&self) -> &[ScalarValue] {
         &self.0
     }
 }

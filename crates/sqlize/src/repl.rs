@@ -14,7 +14,7 @@ use tabled::settings::{self, Width};
 
 use sqlize_core::catalog::Catalog;
 use sqlize_core::catalog::ddl::{catalog_ddl, table_ddl};
-use sqlize_core::catalog::types::{ResultSet, Scalar, TableName, VirtualTable};
+use sqlize_core::catalog::types::{ResultSet, ScalarValue, TableName, VirtualTable, format_scalar};
 use sqlize_core::datafusion::SqlizeContext;
 use sqlize_core::output::{result_set_to_json, result_set_to_toon};
 
@@ -653,14 +653,20 @@ fn print_table(builder: Builder) {
     println!("{tbl}");
 }
 
-fn format_value(v: &Scalar) -> String {
+fn format_value(v: &ScalarValue) -> String {
+    if v.is_null() {
+        return "NULL".to_owned();
+    }
     match v {
-        Scalar::Null => "NULL".to_owned(),
-        Scalar::String(s) => s.clone(),
-        Scalar::Integer(n) => n.to_string(),
-        Scalar::Float(n) => format!("{n:.2}"),
-        Scalar::Boolean(b) => b.to_string(),
-        Scalar::Json(j) => j.to_string(),
+        ScalarValue::Utf8(Some(s)) | ScalarValue::LargeUtf8(Some(s)) => s.clone(),
+        ScalarValue::Int64(Some(n)) => n.to_string(),
+        ScalarValue::Float64(Some(n)) => format!("{n:.2}"),
+        ScalarValue::Boolean(Some(b)) => b.to_string(),
+        ScalarValue::TimestampMicrosecond(Some(_), _)
+        | ScalarValue::TimestampSecond(Some(_), _)
+        | ScalarValue::TimestampMillisecond(Some(_), _)
+        | ScalarValue::TimestampNanosecond(Some(_), _) => format_scalar(v),
+        other => other.to_string(),
     }
 }
 

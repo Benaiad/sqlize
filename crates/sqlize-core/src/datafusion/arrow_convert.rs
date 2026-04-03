@@ -2,15 +2,13 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use datafusion::arrow::array::{
-    ArrayRef, BooleanArray, BooleanBuilder, Float32Array, Float64Array, Float64Builder, Int8Array,
-    Int16Array, Int32Array, Int64Array, Int64Builder, LargeStringArray, RecordBatch, StringArray,
-    StringBuilder, UInt8Array, UInt16Array, UInt32Array, UInt64Array,
+    ArrayRef, BooleanBuilder, Float64Builder, Int64Builder, RecordBatch, StringBuilder,
 };
 use datafusion::arrow::datatypes::{DataType, Field, Schema, SchemaRef, TimeUnit};
-use datafusion::common::DataFusionError;
+use datafusion::common::{DataFusionError, ScalarValue};
 
 use crate::catalog::types::{
-    Column, ColumnName, ColumnType, ResultSet, Row, Scalar, VirtualTable, sanitize_name,
+    Column, ColumnName, ColumnType, ResultSet, Row, VirtualTable, sanitize_name,
 };
 
 /// Map a sqlize `ColumnType` to an Arrow `DataType`.
@@ -89,7 +87,7 @@ impl SanitizedKeyMap {
 pub fn json_response_to_batch(
     json: &serde_json::Value,
     columns: &[Column],
-    param_values: &HashMap<ColumnName, Scalar>,
+    param_values: &HashMap<ColumnName, ScalarValue>,
     schema: &SchemaRef,
 ) -> Result<RecordBatch, DataFusionError> {
     let items = match json {
@@ -123,9 +121,10 @@ pub fn json_response_to_batch(
                 for item in items {
                     let val = extract_value(item, col, param_values, key_map.as_ref());
                     match val {
-                        Scalar::Null => builder.append_null(),
-                        Scalar::String(s) => builder.append_value(&s),
-                        Scalar::Json(j) => builder.append_value(j.to_string()),
+                        ScalarValue::Utf8(Some(s)) | ScalarValue::LargeUtf8(Some(s)) => {
+                            builder.append_value(&s)
+                        }
+                        v if v.is_null() => builder.append_null(),
                         other => builder.append_value(other.to_string()),
                     }
                 }
@@ -136,8 +135,7 @@ pub fn json_response_to_batch(
                 for item in items {
                     let val = extract_value(item, col, param_values, key_map.as_ref());
                     match val {
-                        Scalar::Integer(n) => builder.append_value(n),
-                        Scalar::Null => builder.append_null(),
+                        ScalarValue::Int64(Some(n)) => builder.append_value(n),
                         _ => builder.append_null(),
                     }
                 }
@@ -148,9 +146,8 @@ pub fn json_response_to_batch(
                 for item in items {
                     let val = extract_value(item, col, param_values, key_map.as_ref());
                     match val {
-                        Scalar::Float(n) => builder.append_value(n),
-                        Scalar::Integer(n) => builder.append_value(n as f64),
-                        Scalar::Null => builder.append_null(),
+                        ScalarValue::Float64(Some(n)) => builder.append_value(n),
+                        ScalarValue::Int64(Some(n)) => builder.append_value(n as f64),
                         _ => builder.append_null(),
                     }
                 }
@@ -161,8 +158,7 @@ pub fn json_response_to_batch(
                 for item in items {
                     let val = extract_value(item, col, param_values, key_map.as_ref());
                     match val {
-                        Scalar::Boolean(b) => builder.append_value(b),
-                        Scalar::Null => builder.append_null(),
+                        ScalarValue::Boolean(Some(b)) => builder.append_value(b),
                         _ => builder.append_null(),
                     }
                 }
@@ -174,8 +170,10 @@ pub fn json_response_to_batch(
                 for item in items {
                     let val = extract_value(item, col, param_values, key_map.as_ref());
                     match val {
-                        Scalar::Null => builder.append_null(),
-                        Scalar::String(s) => builder.append_value(&s),
+                        ScalarValue::Utf8(Some(s)) | ScalarValue::LargeUtf8(Some(s)) => {
+                            builder.append_value(&s)
+                        }
+                        v if v.is_null() => builder.append_null(),
                         other => builder.append_value(other.to_string()),
                     }
                 }
@@ -190,7 +188,7 @@ pub fn json_response_to_batch(
                 for item in items {
                     let val = extract_value(item, col, param_values, key_map.as_ref());
                     match val {
-                        Scalar::Null => builder.append_null(),
+                        v if v.is_null() => builder.append_null(),
                         other => builder.append_value(other.to_string()),
                     }
                 }
@@ -210,9 +208,9 @@ pub fn json_response_to_batch(
 fn extract_value(
     item: &serde_json::Value,
     col: &Column,
-    param_values: &HashMap<ColumnName, Scalar>,
+    param_values: &HashMap<ColumnName, ScalarValue>,
     key_map: Option<&SanitizedKeyMap>,
-) -> Scalar {
+) -> ScalarValue {
     // Path params: always use the pushed value
     if col.role.is_required() {
         if let Some(v) = param_values.get(&col.name) {
@@ -225,7 +223,7 @@ fn extract_value(
         let col_name = col.name.as_str();
         let json_val = key_map.and_then(|km| km.get(col_name, map));
         if let Some(v) = json_val {
-            return json_value_to_scalar(v);
+            return json_to_scalar_value(v);
         }
     }
 
@@ -233,24 +231,24 @@ fn extract_value(
         return v.clone();
     }
 
-    Scalar::Null
+    ScalarValue::Null
 }
 
-fn json_value_to_scalar(v: &serde_json::Value) -> Scalar {
+fn json_to_scalar_value(v: &serde_json::Value) -> ScalarValue {
     match v {
-        serde_json::Value::Null => Scalar::Null,
-        serde_json::Value::Bool(b) => Scalar::Boolean(*b),
+        serde_json::Value::Null => ScalarValue::Null,
+        serde_json::Value::Bool(b) => ScalarValue::Boolean(Some(*b)),
         serde_json::Value::Number(n) => {
             if let Some(i) = n.as_i64() {
-                Scalar::Integer(i)
+                ScalarValue::Int64(Some(i))
             } else if let Some(f) = n.as_f64() {
-                Scalar::Float(f)
+                ScalarValue::Float64(Some(f))
             } else {
-                Scalar::String(n.to_string())
+                ScalarValue::Utf8(Some(n.to_string()))
             }
         }
-        serde_json::Value::String(s) => Scalar::String(s.clone()),
-        other => Scalar::Json(other.clone()),
+        serde_json::Value::String(s) => ScalarValue::Utf8(Some(s.clone())),
+        other => ScalarValue::Utf8(Some(other.to_string())),
     }
 }
 
@@ -274,10 +272,12 @@ pub fn batches_to_result_set(batches: &[RecordBatch]) -> ResultSet {
 
     for batch in batches {
         for row_idx in 0..batch.num_rows() {
-            let values: Vec<Scalar> = batch
+            let values: Vec<ScalarValue> = batch
                 .columns()
                 .iter()
-                .map(|col| arrow_value_to_scalar(col, row_idx))
+                .map(|col| {
+                    ScalarValue::try_from_array(col.as_ref(), row_idx).unwrap_or(ScalarValue::Null)
+                })
                 .collect();
             rows.push(Row::new(values));
         }
@@ -286,88 +286,13 @@ pub fn batches_to_result_set(batches: &[RecordBatch]) -> ResultSet {
     ResultSet { columns, rows }
 }
 
-fn arrow_value_to_scalar(array: &ArrayRef, idx: usize) -> Scalar {
-    if array.is_null(idx) {
-        return Scalar::Null;
-    }
-
-    match array.data_type() {
-        DataType::Utf8 => {
-            let arr = array.as_any().downcast_ref::<StringArray>().unwrap();
-            Scalar::String(arr.value(idx).to_owned())
-        }
-        DataType::LargeUtf8 => {
-            let arr = array.as_any().downcast_ref::<LargeStringArray>().unwrap();
-            Scalar::String(arr.value(idx).to_owned())
-        }
-        DataType::Int8 => {
-            let arr = array.as_any().downcast_ref::<Int8Array>().unwrap();
-            Scalar::Integer(arr.value(idx) as i64)
-        }
-        DataType::Int16 => {
-            let arr = array.as_any().downcast_ref::<Int16Array>().unwrap();
-            Scalar::Integer(arr.value(idx) as i64)
-        }
-        DataType::Int32 => {
-            let arr = array.as_any().downcast_ref::<Int32Array>().unwrap();
-            Scalar::Integer(arr.value(idx) as i64)
-        }
-        DataType::Int64 => {
-            let arr = array.as_any().downcast_ref::<Int64Array>().unwrap();
-            Scalar::Integer(arr.value(idx))
-        }
-        DataType::UInt8 => {
-            let arr = array.as_any().downcast_ref::<UInt8Array>().unwrap();
-            Scalar::Integer(arr.value(idx) as i64)
-        }
-        DataType::UInt16 => {
-            let arr = array.as_any().downcast_ref::<UInt16Array>().unwrap();
-            Scalar::Integer(arr.value(idx) as i64)
-        }
-        DataType::UInt32 => {
-            let arr = array.as_any().downcast_ref::<UInt32Array>().unwrap();
-            Scalar::Integer(arr.value(idx) as i64)
-        }
-        DataType::UInt64 => {
-            let arr = array.as_any().downcast_ref::<UInt64Array>().unwrap();
-            Scalar::Integer(arr.value(idx) as i64)
-        }
-        DataType::Float32 => {
-            let arr = array.as_any().downcast_ref::<Float32Array>().unwrap();
-            Scalar::Float(arr.value(idx) as f64)
-        }
-        DataType::Float64 => {
-            let arr = array.as_any().downcast_ref::<Float64Array>().unwrap();
-            Scalar::Float(arr.value(idx))
-        }
-        DataType::Boolean => {
-            let arr = array.as_any().downcast_ref::<BooleanArray>().unwrap();
-            Scalar::Boolean(arr.value(idx))
-        }
-        DataType::Timestamp(_, _) => {
-            // Render as ISO 8601 for display
-            Scalar::String(
-                datafusion::arrow::util::display::array_value_to_string(array, idx)
-                    .unwrap_or_default(),
-            )
-        }
-        _ => {
-            // Fallback: render as string via Display
-            Scalar::String(
-                datafusion::arrow::util::display::array_value_to_string(array, idx)
-                    .unwrap_or_default(),
-            )
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::catalog::types::{
         ApiEndpoint, ApiParamName, ColumnRole, HttpMethod, PathTemplate, TableName,
     };
-    use datafusion::arrow::array::Array;
+    use datafusion::arrow::array::{Array, BooleanArray, Int64Array, StringArray};
 
     fn test_table(columns: Vec<Column>) -> VirtualTable {
         VirtualTable {
@@ -452,7 +377,10 @@ mod tests {
         let schema = virtual_table_to_schema(&table);
         let json = serde_json::json!([{"title": "fix bug", "number": 42}]);
         let mut params = HashMap::new();
-        params.insert(ColumnName::new("number").unwrap(), Scalar::Integer(42));
+        params.insert(
+            ColumnName::new("number").unwrap(),
+            ScalarValue::Int64(Some(42)),
+        );
         let batch = json_response_to_batch(&json, &cols, &params, &schema).unwrap();
         let num_arr = batch
             .column(0)

@@ -1,7 +1,7 @@
 use serde_json::{Map, Value as JsonValue};
 use toon_format::{EncodeOptions, encode_array};
 
-use crate::catalog::types::{ResultSet, Scalar};
+use crate::catalog::types::{ResultSet, ScalarValue, format_scalar};
 use crate::error::{Error, Result};
 
 /// Format a `ResultSet` as TOON — a compact, token-efficient encoding
@@ -37,14 +37,22 @@ fn result_set_to_json_value(result: &ResultSet) -> JsonValue {
     JsonValue::Array(rows)
 }
 
-fn value_to_json(v: &Scalar) -> JsonValue {
+fn value_to_json(v: &ScalarValue) -> JsonValue {
+    if v.is_null() {
+        return JsonValue::Null;
+    }
     match v {
-        Scalar::Null => JsonValue::Null,
-        Scalar::String(s) => JsonValue::String(s.clone()),
-        Scalar::Integer(n) => serde_json::json!(n),
-        Scalar::Float(n) => serde_json::json!(n),
-        Scalar::Boolean(b) => JsonValue::Bool(*b),
-        Scalar::Json(j) => j.clone(),
+        ScalarValue::Utf8(Some(s)) | ScalarValue::LargeUtf8(Some(s)) => {
+            JsonValue::String(s.clone())
+        }
+        ScalarValue::Int64(Some(n)) => serde_json::json!(n),
+        ScalarValue::Float64(Some(n)) => serde_json::json!(n),
+        ScalarValue::Boolean(Some(b)) => JsonValue::Bool(*b),
+        ScalarValue::TimestampMicrosecond(Some(_), _)
+        | ScalarValue::TimestampSecond(Some(_), _)
+        | ScalarValue::TimestampMillisecond(Some(_), _)
+        | ScalarValue::TimestampNanosecond(Some(_), _) => JsonValue::String(format_scalar(v)),
+        other => JsonValue::String(other.to_string()),
     }
 }
 
@@ -62,19 +70,19 @@ mod tests {
             ],
             rows: vec![
                 Row::new(vec![
-                    Scalar::Integer(1),
-                    Scalar::String("Fix bug".into()),
-                    Scalar::String("open".into()),
+                    ScalarValue::Int64(Some(1)),
+                    ScalarValue::Utf8(Some("Fix bug".into())),
+                    ScalarValue::Utf8(Some("open".into())),
                 ]),
                 Row::new(vec![
-                    Scalar::Integer(2),
-                    Scalar::String("Add feature".into()),
-                    Scalar::String("closed".into()),
+                    ScalarValue::Int64(Some(2)),
+                    ScalarValue::Utf8(Some("Add feature".into())),
+                    ScalarValue::Utf8(Some("closed".into())),
                 ]),
                 Row::new(vec![
-                    Scalar::Integer(3),
-                    Scalar::String("Refactor module".into()),
-                    Scalar::String("open".into()),
+                    ScalarValue::Int64(Some(3)),
+                    ScalarValue::Utf8(Some("Refactor module".into())),
+                    ScalarValue::Utf8(Some("open".into())),
                 ]),
             ],
         }

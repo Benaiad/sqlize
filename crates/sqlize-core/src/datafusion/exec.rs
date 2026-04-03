@@ -14,7 +14,9 @@ use datafusion::physical_plan::{
 };
 use reqwest::header::{ACCEPT, AUTHORIZATION, USER_AGENT};
 
-use crate::catalog::types::{ColumnName, Scalar, VirtualTable};
+use crate::catalog::types::{ColumnName, ScalarValue, VirtualTable};
+
+use super::arrow_convert::column_type_to_arrow;
 use crate::http::AuthConfig;
 use crate::http::pagination;
 
@@ -131,15 +133,18 @@ impl ExecutionPlan for ApiTableExec {
 
         let first_url = resolve_url(&table, &params)?;
 
-        let param_values: HashMap<ColumnName, Scalar> = table
+        let param_values: HashMap<ColumnName, ScalarValue> = table
             .columns
             .iter()
             .filter(|c| c.role.is_pushable())
             .filter_map(|c| {
                 let api_key = c.api_param_key();
-                params
-                    .get(api_key)
-                    .map(|v| (c.name.clone(), Scalar::parse(v, c.col_type)))
+                params.get(api_key).map(|v| {
+                    let dt = column_type_to_arrow(&c.col_type);
+                    let sv = ScalarValue::try_from_string(v.clone(), &dt)
+                        .unwrap_or_else(|_| ScalarValue::Utf8(Some(v.clone())));
+                    (c.name.clone(), sv)
+                })
             })
             .collect();
 
@@ -152,7 +157,7 @@ impl ExecutionPlan for ApiTableExec {
             table: Arc<VirtualTable>,
             full_schema: SchemaRef,
             params: HashMap<String, String>,
-            param_values: HashMap<ColumnName, Scalar>,
+            param_values: HashMap<ColumnName, ScalarValue>,
             projection: Option<Vec<usize>>,
             auth: AuthConfig,
             client: reqwest::Client,
