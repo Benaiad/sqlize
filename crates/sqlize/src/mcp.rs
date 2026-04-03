@@ -72,47 +72,43 @@ impl SqlizeServer {
     /// Returns CREATE TABLE DDL with column types and descriptions.
     #[tool(name = "get_schema")]
     async fn get_schema(&self, Parameters(args): Parameters<GetSchemaArgs>) -> String {
-        match &args.table {
-            Some(name) => match self.catalog_set.describe(name) {
-                Some(ddl) => ddl,
-                None => {
-                    let available: Vec<String> = self
-                        .catalog_set
-                        .all_tables()
-                        .iter()
-                        .map(|(_, t)| t.name.as_str().to_owned())
-                        .collect();
-                    format!(
-                        "Table '{name}' not found. Available tables:\n{}",
-                        available.join(", ")
-                    )
-                }
-            },
-            None => {
-                let mut out = String::from(
-                    "Available tables (use get_schema with a table name for full DDL):\n\n",
-                );
-                for (_, table) in self.catalog_set.all_tables() {
-                    let required: Vec<_> =
-                        table.required_params().map(|c| c.name.as_str()).collect();
-                    let req = if required.is_empty() {
-                        String::new()
-                    } else {
-                        format!("  required: {}", required.join(", "))
-                    };
-                    out.push_str(&format!(
-                        "  {:<30} -- {}{}\n",
-                        table.name,
-                        table
-                            .description
-                            .as_ref()
-                            .map(sqlize_core::catalog::types::Description::as_str)
-                            .unwrap_or(""),
-                        req,
-                    ));
-                }
-                out
+        if let Some(name) = &args.table {
+            if let Some(ddl) = self.catalog_set.describe(name) {
+                ddl
+            } else {
+                let available: Vec<String> = self
+                    .catalog_set
+                    .all_tables()
+                    .iter()
+                    .map(|(_, t)| t.name.as_str().to_owned())
+                    .collect();
+                format!(
+                    "Table '{name}' not found. Available tables:\n{}",
+                    available.join(", ")
+                )
             }
+        } else {
+            let mut out = String::from(
+                "Available tables (use get_schema with a table name for full DDL):\n\n",
+            );
+            for (_, table) in self.catalog_set.all_tables() {
+                let required: Vec<_> = table.required_params().map(|c| c.name.as_str()).collect();
+                let req = if required.is_empty() {
+                    String::new()
+                } else {
+                    format!("  required: {}", required.join(", "))
+                };
+                out.push_str(&format!(
+                    "  {:<30} -- {}{}\n",
+                    table.name,
+                    table
+                        .description
+                        .as_ref()
+                        .map_or("", sqlize_core::catalog::types::Description::as_str),
+                    req,
+                ));
+            }
+            out
         }
     }
 
@@ -127,7 +123,7 @@ impl SqlizeServer {
             Err(e) => return format!("Error: {e}"),
         };
 
-        let max = args.max_rows.unwrap_or(100) as usize;
+        let max = usize::try_from(args.max_rows.unwrap_or(100)).unwrap_or(usize::MAX);
         result.rows.truncate(max);
 
         let row_count = result.rows.len();

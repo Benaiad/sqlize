@@ -1,3 +1,9 @@
+#![expect(
+    clippy::print_stdout,
+    clippy::print_stderr,
+    reason = "CLI binary, stdout is the interface"
+)]
+
 mod mcp;
 mod repl;
 

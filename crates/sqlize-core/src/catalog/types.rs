@@ -277,8 +277,7 @@ impl Column {
     pub fn api_param_key(&self) -> &str {
         self.api_name
             .as_ref()
-            .map(ApiParamName::as_str)
-            .unwrap_or(self.name.as_str())
+            .map_or(self.name.as_str(), ApiParamName::as_str)
     }
 }
 

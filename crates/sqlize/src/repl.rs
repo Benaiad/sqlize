@@ -231,6 +231,10 @@ const SQL_KEYWORDS: &[&str] = &[
 struct SqlHighlighter;
 
 impl Highlighter for SqlHighlighter {
+    #[expect(
+        clippy::unwrap_used,
+        reason = "next() after peek() is safe on Peekable"
+    )]
     fn highlight(&self, line: &str, _cursor: usize) -> StyledText {
         let mut styled = StyledText::new();
         let keyword_style = Style::new().fg(Color::Cyan).bold();
@@ -322,8 +326,7 @@ impl Completer for SqlCompleter {
         let before_cursor = &line[..pos];
         let word_start = before_cursor
             .rfind(|c: char| c.is_ascii_whitespace() || c == ',' || c == '(' || c == ')')
-            .map(|i| i + 1)
-            .unwrap_or(0);
+            .map_or(0, |i| i + 1);
 
         let partial = &before_cursor[word_start..];
         if partial.is_empty() {
@@ -430,7 +433,13 @@ pub async fn run(catalog_set: Arc<CatalogSet>, ctx: Arc<QueryEngine>, format: Ou
         Ok(h) => h,
         Err(e) => {
             eprintln!("Warning: could not open history file: {e}");
-            FileBackedHistory::new(1000).expect("in-memory history initialization failed")
+            match FileBackedHistory::new(1000) {
+                Ok(h) => h,
+                Err(e) => {
+                    eprintln!("Warning: could not create in-memory history: {e}");
+                    return;
+                }
+            }
         }
     };
 
@@ -545,8 +554,7 @@ fn handle_show_tables(catalog_set: &CatalogSet) {
         let desc = table
             .description
             .as_ref()
-            .map(sqlize_core::catalog::types::Description::as_str)
-            .unwrap_or("-");
+            .map_or("-", sqlize_core::catalog::types::Description::as_str);
 
         if catalog_set.is_multi() {
             builder.push_record([
@@ -732,9 +740,7 @@ fn format_value(v: &ScalarValue) -> String {
 }
 
 fn term_width() -> usize {
-    terminal_size::terminal_size()
-        .map(|(w, _)| w.0 as usize)
-        .unwrap_or(120)
+    terminal_size::terminal_size().map_or(120, |(w, _)| w.0 as usize)
 }
 
 fn history_path() -> std::path::PathBuf {
