@@ -174,15 +174,24 @@ fn extract_eq_filter(expr: &Expr) -> Option<(String, String)> {
 }
 
 fn scalar_to_string(lit: &datafusion::common::ScalarValue) -> Option<String> {
+    use datafusion::common::ScalarValue;
     match lit {
-        datafusion::common::ScalarValue::Utf8(Some(s))
-        | datafusion::common::ScalarValue::LargeUtf8(Some(s)) => Some(s.clone()),
-        datafusion::common::ScalarValue::Int8(Some(n)) => Some(n.to_string()),
-        datafusion::common::ScalarValue::Int16(Some(n)) => Some(n.to_string()),
-        datafusion::common::ScalarValue::Int32(Some(n)) => Some(n.to_string()),
-        datafusion::common::ScalarValue::Int64(Some(n)) => Some(n.to_string()),
-        datafusion::common::ScalarValue::Boolean(Some(b)) => Some(b.to_string()),
-        _ => None,
+        ScalarValue::Utf8(Some(s)) | ScalarValue::LargeUtf8(Some(s)) => Some(s.clone()),
+        ScalarValue::Int8(Some(n)) => Some(n.to_string()),
+        ScalarValue::Int16(Some(n)) => Some(n.to_string()),
+        ScalarValue::Int32(Some(n)) => Some(n.to_string()),
+        ScalarValue::Int64(Some(n)) => Some(n.to_string()),
+        ScalarValue::UInt8(Some(n)) => Some(n.to_string()),
+        ScalarValue::UInt16(Some(n)) => Some(n.to_string()),
+        ScalarValue::UInt32(Some(n)) => Some(n.to_string()),
+        ScalarValue::UInt64(Some(n)) => Some(n.to_string()),
+        ScalarValue::Float32(Some(n)) => Some(n.to_string()),
+        ScalarValue::Float64(Some(n)) => Some(n.to_string()),
+        ScalarValue::Boolean(Some(b)) => Some(b.to_string()),
+        other => {
+            tracing::warn!(scalar_type = %other.data_type(), "unsupported filter literal type — not pushed down");
+            None
+        }
     }
 }
 
@@ -190,8 +199,8 @@ fn scalar_to_string(lit: &datafusion::common::ScalarValue) -> Option<String> {
 mod tests {
     use super::*;
     use crate::catalog::types::{
-        ApiEndpoint, ApiParamName, Column, ColumnName, ColumnType, HttpMethod, PathTemplate,
-        TableName,
+        AcceptHeader, ApiEndpoint, ApiParamName, BaseUrl, Column, ColumnName, ColumnType,
+        HttpMethod, PathTemplate, TableName,
     };
     use datafusion::common::ScalarValue;
     use datafusion::logical_expr::Operator;
@@ -200,14 +209,14 @@ mod tests {
     fn test_table(columns: Vec<Column>) -> VirtualTable {
         VirtualTable {
             name: TableName::new("test").unwrap(),
-            description: String::new(),
+            description: None,
             columns,
             endpoint: ApiEndpoint {
                 method: HttpMethod::Get,
                 path: PathTemplate::new("/test/{id}").unwrap(),
-                base_url: "https://example.com".to_owned(),
-                accept: "application/json".to_owned(),
-                data_path: None,
+                base_url: BaseUrl::new("https://example.com").unwrap(),
+                accept: AcceptHeader::new("application/json"),
+                response_wrapper_key: None,
             },
         }
     }
@@ -219,7 +228,7 @@ mod tests {
             nullable: role != ColumnRole::PathParam,
             description: None,
             role,
-            api_name: Some(ApiParamName::new(name)),
+            api_name: Some(ApiParamName::new(name).unwrap()),
         }
     }
 

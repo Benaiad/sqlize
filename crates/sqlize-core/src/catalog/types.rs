@@ -42,14 +42,24 @@ impl fmt::Display for TableName {
 }
 
 /// An API parameter name as it appears in HTTP requests.
-/// May contain characters not valid in SQL column names (e.g., `created[gte]`).
+/// May contain characters not valid in SQL column names (e.g., Stripe's `created[gte]`).
+/// Only emptiness is validated — special characters are intentionally allowed
+/// since API parameter names are defined by the target API, not by SQL conventions.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ApiParamName(String);
 
 impl ApiParamName {
-    pub fn new(s: impl Into<String>) -> Self {
-        Self(s.into())
+    pub fn new(s: impl Into<String>) -> Result<Self, Error> {
+        let s = s.into();
+        if s.is_empty() {
+            return Err(Error::InvalidApiParamName {
+                input: s,
+                reason: "cannot be empty",
+            });
+        }
+        Ok(Self(s))
     }
+
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -149,6 +159,32 @@ impl fmt::Display for PathTemplate {
     }
 }
 
+/// A validated API base URL. Prevents invalid URLs from propagating.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BaseUrl(String);
+
+impl BaseUrl {
+    pub fn new(s: &str) -> Result<Self, Error> {
+        // Validate by parsing, then store as a string with trailing slash stripped
+        let _parsed = reqwest::Url::parse(s).map_err(|_| Error::InvalidBaseUrl {
+            input: s.to_owned(),
+            reason: "failed to parse as URL",
+        })?;
+        let trimmed = s.trim_end_matches('/');
+        Ok(Self(trimmed.to_owned()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for BaseUrl {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Column types
 // ---------------------------------------------------------------------------
@@ -241,7 +277,7 @@ impl Column {
     pub fn api_param_key(&self) -> &str {
         self.api_name
             .as_ref()
-            .map(|n| n.as_str())
+            .map(ApiParamName::as_str)
             .unwrap_or(self.name.as_str())
     }
 }
@@ -272,6 +308,33 @@ impl fmt::Display for HttpMethod {
 }
 
 // ---------------------------------------------------------------------------
+// Accept header
+// ---------------------------------------------------------------------------
+
+/// A validated HTTP Accept header value (e.g., `"application/json"`).
+/// Always derived from the OpenAPI spec's response media types.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AcceptHeader(String);
+
+impl AcceptHeader {
+    pub fn new(s: impl Into<String>) -> Self {
+        let s = s.into();
+        assert!(!s.is_empty(), "AcceptHeader cannot be empty");
+        Self(s)
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for AcceptHeader {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // API endpoint
 // ---------------------------------------------------------------------------
 
@@ -279,14 +342,12 @@ impl fmt::Display for HttpMethod {
 pub struct ApiEndpoint {
     pub method: HttpMethod,
     pub path: PathTemplate,
-    pub base_url: String,
-    /// The content type to send in the Accept header, derived from the spec's
-    /// response media types (e.g., "application/json").
-    pub accept: String,
-    /// For wrapped responses (e.g., Stripe's `{"data": [...]}`), the JSON field
-    /// name that holds the array. `None` for top-level arrays.
-    /// Derived from the OpenAPI response schema at spec-loading time.
-    pub data_path: Option<String>,
+    pub base_url: BaseUrl,
+    pub accept: AcceptHeader,
+    /// JSON field name holding the result array in wrapped responses
+    /// (e.g., `"data"` for Stripe's `{"data": [...]}`).
+    /// `None` for top-level arrays or single objects.
+    pub response_wrapper_key: Option<String>,
 }
 
 impl ApiEndpoint {
@@ -297,13 +358,44 @@ impl ApiEndpoint {
 }
 
 // ---------------------------------------------------------------------------
+// Description
+// ---------------------------------------------------------------------------
+
+/// A non-empty, single-line description. Truncated to 120 characters at construction.
+/// Returns `None` from `Description::new()` for empty or whitespace-only input.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Description(String);
+
+impl Description {
+    /// Create from a string. Returns `None` if empty or whitespace-only.
+    /// Takes the first line only and truncates to 120 characters.
+    pub fn new(s: &str) -> Option<Self> {
+        let first_line = s.trim().lines().next()?.trim();
+        if first_line.is_empty() {
+            return None;
+        }
+        Some(Self(truncate_str(first_line, 120)))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for Description {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Virtual table
 // ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone)]
 pub struct VirtualTable {
     pub name: TableName,
-    pub description: String,
+    pub description: Option<Description>,
     pub columns: Vec<Column>,
     pub endpoint: ApiEndpoint,
 }
@@ -352,7 +444,7 @@ pub fn sanitize_name(name: &str) -> String {
         } else if ch.is_ascii_uppercase() {
             if i > 0 {
                 let prev_lower = chars[i - 1].is_ascii_lowercase();
-                let next_lower = chars.get(i + 1).is_some_and(|c| c.is_ascii_lowercase());
+                let next_lower = chars.get(i + 1).is_some_and(char::is_ascii_lowercase);
                 // Insert underscore before uppercase when:
                 // - previous char was lowercase (camelCase boundary), OR
                 // - next char is lowercase and previous was uppercase (end of acronym)

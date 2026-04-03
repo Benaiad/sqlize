@@ -14,6 +14,12 @@ pub enum Error {
     #[error("invalid path template {input:?}: {reason}")]
     InvalidPathTemplate { input: String, reason: &'static str },
 
+    #[error("invalid API parameter name {input:?}: {reason}")]
+    InvalidApiParamName { input: String, reason: &'static str },
+
+    #[error("invalid base URL {input:?}: {reason}")]
+    InvalidBaseUrl { input: String, reason: &'static str },
+
     // ---- Catalog lookup ----
     #[error("table {0} not found in catalog")]
     TableNotFound(TableName),
@@ -23,20 +29,24 @@ pub enum Error {
 
     // ---- SQL / DataFusion ----
     #[error("SQL error: {0}")]
-    SqlError(String),
+    SqlError(#[source] datafusion::error::DataFusionError),
 
     #[error("query execution failed: {0}")]
-    QueryExecutionError(String),
+    QueryExecutionError(#[source] datafusion::error::DataFusionError),
 
     #[error("catalog registration failed: {0}")]
-    CatalogRegistrationError(String),
+    CatalogRegistrationError(#[source] datafusion::error::DataFusionError),
 
     // ---- OpenAPI spec loading ----
-    #[error("failed to read spec {path}: {message}")]
-    SpecRead { path: PathBuf, message: String },
+    #[error("failed to read spec {path}")]
+    SpecRead {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
 
     #[error("failed to parse OpenAPI spec: {0}")]
-    SpecParse(String),
+    SpecParse(#[source] serde_json::Error),
 
     #[error("spec has no servers defined — cannot determine API base URL")]
     NoServers,
@@ -49,7 +59,7 @@ pub enum Error {
 
     // ---- Output ----
     #[error("TOON encoding error: {0}")]
-    ToonEncode(String),
+    ToonEncode(#[source] toon_format::ToonError),
 }
 
 pub type Result<T> = std::result::Result<T, Error>;

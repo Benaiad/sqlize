@@ -15,7 +15,7 @@ use tabled::settings::{self, Width};
 use sqlize_core::catalog::Catalog;
 use sqlize_core::catalog::ddl::{catalog_ddl, table_ddl};
 use sqlize_core::catalog::types::{ResultSet, ScalarValue, TableName, VirtualTable, format_scalar};
-use sqlize_core::datafusion::SqlizeContext;
+use sqlize_core::datafusion::QueryEngine;
 use sqlize_core::output::{result_set_to_json, result_set_to_toon};
 
 #[derive(Clone, Copy, clap::ValueEnum)]
@@ -366,7 +366,7 @@ impl Completer for SqlCompleter {
 // REPL loop
 // ---------------------------------------------------------------------------
 
-pub async fn run(catalog_set: Arc<CatalogSet>, ctx: Arc<SqlizeContext>, format: OutputFormat) {
+pub async fn run(catalog_set: Arc<CatalogSet>, ctx: Arc<QueryEngine>, format: OutputFormat) {
     eprintln!("Commands: SHOW TABLES, DESCRIBE <table>, EXPLAIN <query>");
     eprintln!("SQL ends with ; | Tab to complete | Ctrl+D to exit");
 
@@ -426,8 +426,13 @@ pub async fn run(catalog_set: Arc<CatalogSet>, ctx: Arc<SqlizeContext>, format: 
     if let Some(parent) = history_file.parent() {
         std::fs::create_dir_all(parent).ok();
     }
-    let history =
-        FileBackedHistory::with_file(1000, history_file).expect("failed to create history file");
+    let history = match FileBackedHistory::with_file(1000, history_file) {
+        Ok(h) => h,
+        Err(e) => {
+            eprintln!("Warning: could not open history file: {e}");
+            FileBackedHistory::new(1000).expect("in-memory history initialization failed")
+        }
+    };
 
     let completer = Box::new(SqlCompleter {
         words: catalog_set.completion_words(),
@@ -506,12 +511,7 @@ fn parse_command(input: &str) -> ReplCommand<'_> {
     }
 }
 
-async fn dispatch(
-    catalog_set: &CatalogSet,
-    ctx: &SqlizeContext,
-    input: &str,
-    format: OutputFormat,
-) {
+async fn dispatch(catalog_set: &CatalogSet, ctx: &QueryEngine, input: &str, format: OutputFormat) {
     match parse_command(input) {
         ReplCommand::ShowTables => handle_show_tables(catalog_set),
         ReplCommand::Describe(name) => handle_describe(catalog_set, name),
@@ -542,6 +542,11 @@ fn handle_show_tables(catalog_set: &CatalogSet) {
         } else {
             required.join(", ")
         };
+        let desc = table
+            .description
+            .as_ref()
+            .map(sqlize_core::catalog::types::Description::as_str)
+            .unwrap_or("-");
 
         if catalog_set.is_multi() {
             builder.push_record([
@@ -549,14 +554,14 @@ fn handle_show_tables(catalog_set: &CatalogSet) {
                 table.name.as_str(),
                 &table.columns.len().to_string(),
                 &req_str,
-                &table.description,
+                desc,
             ]);
         } else {
             builder.push_record([
                 table.name.as_str(),
                 &table.columns.len().to_string(),
                 &req_str,
-                &table.description,
+                desc,
             ]);
         }
     }
@@ -571,14 +576,14 @@ fn handle_describe(catalog_set: &CatalogSet, name: &str) {
     }
 }
 
-async fn handle_explain(ctx: &SqlizeContext, sql: &str) {
+async fn handle_explain(ctx: &QueryEngine, sql: &str) {
     match ctx.explain(sql).await {
         Ok(plan) => println!("{plan}"),
         Err(e) => eprintln!("Error: {e}"),
     }
 }
 
-async fn handle_query(ctx: &SqlizeContext, sql: &str, format: OutputFormat) {
+async fn handle_query(ctx: &QueryEngine, sql: &str, format: OutputFormat) {
     let result = match ctx.query(sql).await {
         Ok(r) => r,
         Err(e) => {
@@ -595,7 +600,11 @@ async fn handle_query(ctx: &SqlizeContext, sql: &str, format: OutputFormat) {
                 print_expanded(&result);
             } else {
                 let mut builder = Builder::default();
-                let headers: Vec<&str> = result.columns.iter().map(|c| c.as_str()).collect();
+                let headers: Vec<&str> = result
+                    .columns
+                    .iter()
+                    .map(sqlize_core::catalog::types::ColumnName::as_str)
+                    .collect();
                 builder.push_record(headers);
 
                 for row in &result.rows {
@@ -621,6 +630,58 @@ async fn handle_query(ctx: &SqlizeContext, sql: &str, format: OutputFormat) {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Render a `ResultSet` as a formatted table string for terminal output.
+/// Uses expanded (vertical) format when there are more than 6 columns.
+pub fn render_table(result: &ResultSet) -> String {
+    if result.columns.len() > 6 {
+        render_expanded(result)
+    } else {
+        let mut builder = Builder::default();
+        let headers: Vec<&str> = result
+            .columns
+            .iter()
+            .map(sqlize_core::catalog::types::ColumnName::as_str)
+            .collect();
+        builder.push_record(headers);
+
+        for row in &result.rows {
+            let values: Vec<String> = row.values().iter().map(format_value).collect();
+            builder.push_record(values);
+        }
+
+        let mut tbl = builder.build();
+        tbl.with(settings::Style::rounded());
+        tbl.with(Width::wrap(term_width()).keep_words(true));
+        format!("{tbl}")
+    }
+}
+
+fn render_expanded(result: &ResultSet) -> String {
+    let max_col_width = result
+        .columns
+        .iter()
+        .map(|c| c.as_str().len())
+        .max()
+        .unwrap_or(0);
+
+    let mut out = String::new();
+    for (i, row) in result.rows.iter().enumerate() {
+        let label = format!("-[ RECORD {} ]", i + 1);
+        let separator_len = term_width().saturating_sub(label.len()).saturating_sub(1);
+        out.push_str(&format!("{}{}\n", label, "-".repeat(separator_len)));
+
+        for (col, val) in result.columns.iter().zip(row.values().iter()) {
+            out.push_str(&format!(
+                "{:>width$} | {}\n",
+                col.as_str(),
+                format_value(val),
+                width = max_col_width
+            ));
+        }
+    }
+    out
+}
 
 fn print_expanded(result: &ResultSet) {
     let max_col_width = result

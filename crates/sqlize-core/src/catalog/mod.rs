@@ -23,7 +23,7 @@ impl Catalog {
         let mut map = BTreeMap::new();
         for table in tables {
             if map.contains_key(&table.name) {
-                return Err(Error::DuplicateTable(table.name.clone()));
+                return Err(Error::DuplicateTable(table.name));
             }
             map.insert(table.name.clone(), table);
         }

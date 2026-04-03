@@ -7,20 +7,20 @@ use rmcp::model::{Implementation, ServerCapabilities, ServerInfo};
 use rmcp::schemars;
 use rmcp::tool;
 
-use sqlize_core::datafusion::SqlizeContext;
+use sqlize_core::datafusion::QueryEngine;
 use sqlize_core::output::{result_set_to_json, result_set_to_toon};
 
 use crate::repl::CatalogSet;
 
 pub struct SqlizeServer {
     catalog_set: Arc<CatalogSet>,
-    ctx: Arc<SqlizeContext>,
+    ctx: Arc<QueryEngine>,
     instructions: String,
     tool_router: ToolRouter<Self>,
 }
 
 impl SqlizeServer {
-    pub fn new(catalog_set: Arc<CatalogSet>, ctx: Arc<SqlizeContext>, api_title: &str) -> Self {
+    pub fn new(catalog_set: Arc<CatalogSet>, ctx: Arc<QueryEngine>, api_title: &str) -> Self {
         let table_names: Vec<String> = catalog_set
             .all_tables()
             .iter()
@@ -103,7 +103,11 @@ impl SqlizeServer {
                     out.push_str(&format!(
                         "  {:<30} -- {}{}\n",
                         table.name,
-                        sqlize_core::catalog::types::truncate_str(&table.description, 60),
+                        table
+                            .description
+                            .as_ref()
+                            .map(sqlize_core::catalog::types::Description::as_str)
+                            .unwrap_or(""),
                         req,
                     ));
                 }

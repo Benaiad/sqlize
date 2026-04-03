@@ -8,7 +8,7 @@ use clap::{Parser, Subcommand};
 
 use rmcp::ServiceExt;
 use sqlize_core::catalog::Catalog;
-use sqlize_core::datafusion::{DEFAULT_MAX_ROWS, SqlizeContext};
+use sqlize_core::datafusion::{DEFAULT_MAX_ROWS, QueryEngine};
 use sqlize_core::http::AuthConfig;
 use sqlize_core::spec::SpecInfo;
 
@@ -167,7 +167,7 @@ async fn main() -> anyhow::Result<()> {
     });
     let effective_tags: Option<Vec<&str>> = tags
         .as_ref()
-        .map(|v| v.iter().map(|s| s.as_str()).collect());
+        .map(|v| v.iter().map(std::string::String::as_str).collect());
 
     // Load all specs
     let mut specs: Vec<LoadedSpec> = Vec::new();
@@ -183,7 +183,8 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
-    let client = sqlize_core::http::build_client(sqlize_core::http::DEFAULT_TIMEOUT);
+    let client = sqlize_core::http::build_client(sqlize_core::http::DEFAULT_TIMEOUT)
+        .map_err(|e| anyhow::anyhow!("failed to initialize HTTP client: {e}"))?;
 
     // Resolve max_rows: CLI flag > env var > default
     let max_rows = cli.max_rows.unwrap_or_else(|| {
@@ -193,13 +194,13 @@ async fn main() -> anyhow::Result<()> {
             .unwrap_or(DEFAULT_MAX_ROWS)
     });
 
-    let sqlize_ctx = Arc::new(SqlizeContext::new(max_rows));
+    let sqlize_ctx = Arc::new(QueryEngine::new(max_rows));
     let is_single_spec = specs.len() == 1;
 
     // Register each spec as a named schema
     for spec in &specs {
         let auth = AuthConfig {
-            bearer_token: resolve_bearer_token(&spec.name),
+            bearer_token: resolve_bearer_token(&spec.name).map(sqlize_core::http::BearerToken::new),
         };
 
         let schema_name = if is_single_spec {
@@ -257,15 +258,18 @@ async fn main() -> anyhow::Result<()> {
                 .map_err(|e| anyhow::anyhow!("{e}"))?;
 
             match cli.format {
+                repl::OutputFormat::Table => {
+                    print!("{}", repl::render_table(&result));
+                }
+                repl::OutputFormat::Json => {
+                    println!("{}", sqlize_core::output::result_set_to_json(&result));
+                }
                 repl::OutputFormat::Toon => {
                     println!(
                         "{}",
                         sqlize_core::output::result_set_to_toon(&result)
                             .map_err(|e| anyhow::anyhow!("{e}"))?
                     );
-                }
-                _ => {
-                    println!("{}", sqlize_core::output::result_set_to_json(&result));
                 }
             }
         }

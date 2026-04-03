@@ -9,18 +9,18 @@ pub fn table_ddl(table: &VirtualTable) -> String {
     let mut out = String::with_capacity(512);
 
     // Table-level comment
-    if !table.description.is_empty() {
-        writeln!(out, "-- {}", table.description).unwrap();
+    if let Some(desc) = &table.description {
+        let _ = writeln!(out, "-- {desc}");
     }
 
     // Note required WHERE params
     let required: Vec<_> = table.required_params().collect();
     if !required.is_empty() {
         let names: Vec<_> = required.iter().map(|c| c.name.as_str()).collect();
-        writeln!(out, "-- Required WHERE clause: {}", names.join(" AND ")).unwrap();
+        let _ = writeln!(out, "-- Required WHERE clause: {}", names.join(" AND "));
     }
 
-    writeln!(out, "CREATE TABLE {} (", table.name).unwrap();
+    let _ = writeln!(out, "CREATE TABLE {} (", table.name);
 
     for (i, col) in table.columns.iter().enumerate() {
         let trailing_comma = if i + 1 < table.columns.len() { "," } else { "" };
@@ -38,16 +38,15 @@ pub fn table_ddl(table: &VirtualTable) -> String {
             None => String::new(),
         };
 
-        writeln!(
+        let _ = writeln!(
             out,
             "    {name} {typ}{nullable}{trailing_comma}{comment}",
             name = col.name,
             typ = col.col_type,
-        )
-        .unwrap();
+        );
     }
 
-    writeln!(out, ");").unwrap();
+    let _ = writeln!(out, ");");
     out
 }
 
@@ -68,7 +67,7 @@ mod tests {
     fn test_table() -> VirtualTable {
         VirtualTable {
             name: TableName::new("issues").unwrap(),
-            description: "Repository issues".to_owned(),
+            description: Description::new("Repository issues"),
             columns: vec![
                 Column {
                     name: ColumnName::new("owner").unwrap(),
@@ -76,7 +75,7 @@ mod tests {
                     nullable: false,
                     description: Some("Repository owner".to_owned()),
                     role: ColumnRole::PathParam,
-                    api_name: Some(ApiParamName::new("owner")),
+                    api_name: Some(ApiParamName::new("owner").unwrap()),
                 },
                 Column {
                     name: ColumnName::new("repo").unwrap(),
@@ -84,7 +83,7 @@ mod tests {
                     nullable: false,
                     description: Some("Repository name".to_owned()),
                     role: ColumnRole::PathParam,
-                    api_name: Some(ApiParamName::new("repo")),
+                    api_name: Some(ApiParamName::new("repo").unwrap()),
                 },
                 Column {
                     name: ColumnName::new("id").unwrap(),
@@ -108,15 +107,15 @@ mod tests {
                     nullable: false,
                     description: Some("open or closed".to_owned()),
                     role: ColumnRole::QueryParam,
-                    api_name: Some(ApiParamName::new("state")),
+                    api_name: Some(ApiParamName::new("state").unwrap()),
                 },
             ],
             endpoint: ApiEndpoint {
                 method: HttpMethod::Get,
                 path: PathTemplate::new("/repos/{owner}/{repo}/issues").unwrap(),
-                base_url: "https://api.github.com".to_owned(),
-                accept: "application/json".to_owned(),
-                data_path: None,
+                base_url: BaseUrl::new("https://api.github.com").unwrap(),
+                accept: AcceptHeader::new("application/json"),
+                response_wrapper_key: None,
             },
         }
     }

@@ -22,7 +22,7 @@ use super::column_map::{columns_from_schema, resolve_boxed_schema, resolve_schem
 /// is constructed from the path context (e.g., `git_branches` vs `branches`).
 pub fn tables_from_spec(
     spec: &OpenAPI,
-    base_url: &str,
+    base_url: &crate::catalog::types::BaseUrl,
     tag_filter: Option<&[&str]>,
 ) -> Result<Vec<VirtualTable>> {
     // First pass: collect (path, table) pairs and detect name collisions.
@@ -100,10 +100,10 @@ fn try_build_table(
     path_str: &str,
     path_item: &PathItem,
     operation: &Operation,
-    base_url: &str,
+    base_url: &crate::catalog::types::BaseUrl,
 ) -> Result<Option<VirtualTable>> {
     // Find the success response schema and its content type
-    let Some((item_schema, content_type, data_path)) = extract_response_schema(spec, operation)
+    let Some((item_schema, content_type, wrapper_key)) = extract_response_schema(spec, operation)
     else {
         return Ok(None);
     };
@@ -155,11 +155,7 @@ fn try_build_table(
         .summary
         .as_deref()
         .or(operation.description.as_deref())
-        .unwrap_or("")
-        .lines()
-        .next()
-        .unwrap_or("")
-        .to_owned();
+        .and_then(crate::catalog::types::Description::new);
 
     Ok(Some(VirtualTable {
         name: table_name,
@@ -168,9 +164,9 @@ fn try_build_table(
         endpoint: ApiEndpoint {
             method: HttpMethod::Get,
             path: path_template,
-            base_url: base_url.to_owned(),
-            accept: content_type,
-            data_path,
+            base_url: base_url.clone(),
+            accept: crate::catalog::types::AcceptHeader::new(content_type),
+            response_wrapper_key: wrapper_key,
         },
     }))
 }
@@ -376,9 +372,8 @@ fn param_to_column(spec: &OpenAPI, param: &Parameter) -> Result<Option<Column>> 
     };
 
     let col_name_str = crate::catalog::types::sanitize_name(&data.name);
-    let col_name = match ColumnName::new(&col_name_str) {
-        Ok(n) => n,
-        Err(_) => return Ok(None),
+    let Ok(col_name) = ColumnName::new(&col_name_str) else {
+        return Ok(None);
     };
 
     let col_type = param_schema_to_type(spec, &data.format);
@@ -394,7 +389,7 @@ fn param_to_column(spec: &OpenAPI, param: &Parameter) -> Result<Option<Column>> 
         nullable: !data.required,
         description,
         role,
-        api_name: Some(ApiParamName::new(data.name.clone())),
+        api_name: Some(ApiParamName::new(data.name.clone())?),
     }))
 }
 

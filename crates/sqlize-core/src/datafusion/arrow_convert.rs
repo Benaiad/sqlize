@@ -122,7 +122,7 @@ pub fn json_response_to_batch(
                     let val = extract_value(item, col, param_values, key_map.as_ref());
                     match val {
                         ScalarValue::Utf8(Some(s)) | ScalarValue::LargeUtf8(Some(s)) => {
-                            builder.append_value(&s)
+                            builder.append_value(&s);
                         }
                         v if v.is_null() => builder.append_null(),
                         other => builder.append_value(other.to_string()),
@@ -171,7 +171,7 @@ pub fn json_response_to_batch(
                     let val = extract_value(item, col, param_values, key_map.as_ref());
                     match val {
                         ScalarValue::Utf8(Some(s)) | ScalarValue::LargeUtf8(Some(s)) => {
-                            builder.append_value(&s)
+                            builder.append_value(&s);
                         }
                         v if v.is_null() => builder.append_null(),
                         other => builder.append_value(other.to_string()),
@@ -265,7 +265,15 @@ pub fn batches_to_result_set(batches: &[RecordBatch]) -> ResultSet {
     let columns: Vec<ColumnName> = schema
         .fields()
         .iter()
-        .map(|f| ColumnName::new(f.name()).unwrap_or_else(|_| ColumnName::new("_unknown").unwrap()))
+        .map(|f| {
+            ColumnName::new(f.name()).unwrap_or_else(|_| {
+                // Safety: "_unknown" is a valid column name by construction
+                match ColumnName::new("_unknown") {
+                    Ok(name) => name,
+                    Err(_) => unreachable!(),
+                }
+            })
+        })
         .collect();
 
     let mut rows = Vec::new();
@@ -290,21 +298,22 @@ pub fn batches_to_result_set(batches: &[RecordBatch]) -> ResultSet {
 mod tests {
     use super::*;
     use crate::catalog::types::{
-        ApiEndpoint, ApiParamName, ColumnRole, HttpMethod, PathTemplate, TableName,
+        AcceptHeader, ApiEndpoint, ApiParamName, BaseUrl, ColumnRole, HttpMethod, PathTemplate,
+        TableName,
     };
     use datafusion::arrow::array::{Array, BooleanArray, Int64Array, StringArray};
 
     fn test_table(columns: Vec<Column>) -> VirtualTable {
         VirtualTable {
             name: TableName::new("test").unwrap(),
-            description: String::new(),
+            description: None,
             columns,
             endpoint: ApiEndpoint {
                 method: HttpMethod::Get,
                 path: PathTemplate::new("/test").unwrap(),
-                base_url: "https://example.com".to_owned(),
-                accept: "application/json".to_owned(),
-                data_path: None,
+                base_url: BaseUrl::new("https://example.com").unwrap(),
+                accept: AcceptHeader::new("application/json"),
+                response_wrapper_key: None,
             },
         }
     }
@@ -327,7 +336,7 @@ mod tests {
             nullable: false,
             description: None,
             role: ColumnRole::PathParam,
-            api_name: Some(ApiParamName::new(name)),
+            api_name: Some(ApiParamName::new(name).unwrap()),
         }
     }
 

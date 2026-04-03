@@ -201,7 +201,7 @@ impl ExecutionPlan for ApiTableExec {
                 Err(e) => return Some((Err(e), state)),
             };
 
-            let data = unwrap_response(&body, &state.table.endpoint.data_path);
+            let data = unwrap_response(&body, &state.table.endpoint.response_wrapper_key);
 
             let batch = match json_response_to_batch(
                 data,
@@ -257,7 +257,7 @@ fn resolve_url(
                 .find(|c| c.api_param_key() == placeholder)
                 .and_then(|c| {
                     let api_key = c.api_param_key();
-                    params.get(api_key).map(|s| s.as_str())
+                    params.get(api_key).map(std::string::String::as_str)
                 })
         })
         .ok_or_else(|| {
@@ -275,11 +275,11 @@ async fn fetch_page(
 ) -> Result<(serde_json::Value, reqwest::header::HeaderMap), DataFusionError> {
     let mut request = client
         .get(url)
-        .header(ACCEPT, &table.endpoint.accept)
+        .header(ACCEPT, table.endpoint.accept.as_str())
         .header(USER_AGENT, concat!("sqlize/", env!("CARGO_PKG_VERSION")));
 
     if let Some(token) = &auth.bearer_token {
-        request = request.header(AUTHORIZATION, format!("Bearer {token}"));
+        request = request.header(AUTHORIZATION, format!("Bearer {}", token.as_str()));
     }
 
     if is_first_page {
@@ -326,9 +326,9 @@ async fn fetch_page(
 
 fn unwrap_response<'a>(
     body: &'a serde_json::Value,
-    data_path: &Option<String>,
+    wrapper_key: &Option<String>,
 ) -> &'a serde_json::Value {
-    match data_path {
+    match wrapper_key {
         Some(field) => body.get(field.as_str()).unwrap_or(body),
         None => body,
     }

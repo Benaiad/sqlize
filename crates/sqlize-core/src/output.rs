@@ -11,7 +11,7 @@ use crate::error::{Error, Result};
 /// which is exactly what query results are.
 pub fn result_set_to_toon(result: &ResultSet) -> Result<String> {
     let json = result_set_to_json_value(result);
-    encode_array(json, &EncodeOptions::new()).map_err(|e| Error::ToonEncode(e.to_string()))
+    encode_array(json, &EncodeOptions::new()).map_err(Error::ToonEncode)
 }
 
 /// Format a `ResultSet` as JSON (array of objects).

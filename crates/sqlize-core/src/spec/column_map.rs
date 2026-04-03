@@ -97,7 +97,11 @@ fn schema_description(schema: &Schema) -> Option<String> {
 
 fn required_set(schema: &Schema) -> std::collections::HashSet<&str> {
     match &schema.schema_kind {
-        SchemaKind::Type(OaType::Object(obj)) => obj.required.iter().map(|s| s.as_str()).collect(),
+        SchemaKind::Type(OaType::Object(obj)) => obj
+            .required
+            .iter()
+            .map(std::string::String::as_str)
+            .collect(),
         _ => std::collections::HashSet::new(),
     }
 }

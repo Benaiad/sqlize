@@ -23,18 +23,18 @@ pub const DEFAULT_MAX_ROWS: usize = 1000;
 ///
 /// Wraps a DataFusion `SessionContext` with registered API table providers.
 /// Supports multiple specs (schemas) for federated queries.
-pub struct SqlizeContext {
+pub struct QueryEngine {
     ctx: SessionContext,
     max_rows: usize,
 }
 
-impl Default for SqlizeContext {
+impl Default for QueryEngine {
     fn default() -> Self {
         Self::new(DEFAULT_MAX_ROWS)
     }
 }
 
-impl SqlizeContext {
+impl QueryEngine {
     pub fn new(max_rows: usize) -> Self {
         let config = SessionConfig::new()
             .with_information_schema(false)
@@ -54,32 +54,24 @@ impl SqlizeContext {
         let schema_provider =
             Arc::new(ApiSchemaProvider::new(catalog, auth, client, self.max_rows));
 
-        let df_catalog = self
-            .ctx
-            .catalog("sqlize")
-            .ok_or_else(|| Error::CatalogRegistrationError("missing default catalog".into()))?;
+        let df_catalog = self.ctx.catalog("sqlize").ok_or_else(|| {
+            Error::CatalogRegistrationError(datafusion::error::DataFusionError::Internal(
+                "missing default catalog".into(),
+            ))
+        })?;
 
         df_catalog
             .register_schema(schema_name, schema_provider)
-            .map_err(|e| {
-                Error::CatalogRegistrationError(format!("failed to register schema: {e}"))
-            })?;
+            .map_err(Error::CatalogRegistrationError)?;
 
         Ok(())
     }
 
     /// Execute a SQL query and return a `ResultSet`.
     pub async fn query(&self, sql: &str) -> Result<ResultSet> {
-        let df = self
-            .ctx
-            .sql(sql)
-            .await
-            .map_err(|e| Error::SqlError(e.to_string()))?;
+        let df = self.ctx.sql(sql).await.map_err(Error::SqlError)?;
 
-        let batches = df
-            .collect()
-            .await
-            .map_err(|e| Error::QueryExecutionError(e.to_string()))?;
+        let batches = df.collect().await.map_err(Error::QueryExecutionError)?;
 
         Ok(batches_to_result_set(&batches))
     }
@@ -90,12 +82,9 @@ impl SqlizeContext {
             .ctx
             .sql(&format!("EXPLAIN {sql}"))
             .await
-            .map_err(|e| Error::SqlError(e.to_string()))?;
+            .map_err(Error::SqlError)?;
 
-        let batches = df
-            .collect()
-            .await
-            .map_err(|e| Error::QueryExecutionError(e.to_string()))?;
+        let batches = df.collect().await.map_err(Error::QueryExecutionError)?;
 
         let result = batches_to_result_set(&batches);
         let mut out = String::new();
