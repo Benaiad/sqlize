@@ -1,3 +1,9 @@
+#![expect(
+    clippy::print_stdout,
+    clippy::expect_used,
+    reason = "example binary, stdout is the interface"
+)]
+
 use std::path::Path;
 
 use sqlize_core::catalog::ddl::catalog_ddl;

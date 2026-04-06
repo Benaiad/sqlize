@@ -59,42 +59,51 @@ impl CatalogSet {
         tables
     }
 
-    /// Look up a table by name. Supports "schema.table" or bare "table" (searches all).
-    pub fn find_table(&self, name: &str) -> Option<(&str, &VirtualTable)> {
+    /// Look up tables by name. Supports "schema.table" (exact) or bare "table" (all catalogs).
+    pub fn find_tables(&self, name: &str) -> Vec<(&str, &VirtualTable)> {
         if let Some((schema, table)) = name.split_once('.') {
-            // Qualified: schema.table
-            for (cat_name, catalog) in &self.entries {
-                if cat_name == schema {
-                    if let Ok(tn) = TableName::new(table) {
-                        if let Some(t) = catalog.get(&tn) {
-                            return Some((cat_name, t));
-                        }
-                    }
-                }
-            }
-            None
+            // Qualified: schema.table — at most one match
+            let Ok(tn) = TableName::new(table) else {
+                return Vec::new();
+            };
+            self.entries
+                .iter()
+                .filter(|(cat_name, _)| cat_name == schema)
+                .filter_map(|(cat_name, catalog)| catalog.get(&tn).map(|t| (cat_name.as_str(), t)))
+                .collect()
         } else {
-            // Bare: search all catalogs
-            if let Ok(tn) = TableName::new(name) {
-                for (cat_name, catalog) in &self.entries {
-                    if let Some(t) = catalog.get(&tn) {
-                        return Some((cat_name, t));
-                    }
-                }
-            }
-            None
+            // Bare: return all matches across catalogs
+            let Ok(tn) = TableName::new(name) else {
+                return Vec::new();
+            };
+            self.entries
+                .iter()
+                .filter_map(|(cat_name, catalog)| catalog.get(&tn).map(|t| (cat_name.as_str(), t)))
+                .collect()
         }
     }
 
     pub fn describe(&self, name: &str) -> Option<String> {
-        self.find_table(name).map(|(_, t)| table_ddl(t))
+        let matches = self.find_tables(name);
+        if matches.is_empty() {
+            return None;
+        }
+        if matches.len() == 1 && !self.is_multi() {
+            return Some(table_ddl(matches[0].1));
+        }
+        // Multiple matches or multi-spec mode: prefix each with spec name
+        let ddls: Vec<String> = matches
+            .iter()
+            .map(|(schema, t)| format!("-- Spec: {schema}\n{}", table_ddl(t)))
+            .collect();
+        Some(ddls.join("\n\n"))
     }
 
     pub fn full_ddl(&self) -> String {
         let mut out = String::new();
         for (name, catalog) in &self.entries {
             if self.is_multi() {
-                out.push_str(&format!("-- Schema: {name}\n\n"));
+                out.push_str(&format!("-- Spec: {name}\n\n"));
             }
             out.push_str(&catalog_ddl(catalog));
             out.push('\n');
@@ -539,7 +548,7 @@ fn handle_show_tables(catalog_set: &CatalogSet) {
     let mut builder = Builder::default();
 
     if catalog_set.is_multi() {
-        builder.push_record(["schema", "table", "columns", "required", "description"]);
+        builder.push_record(["spec", "table", "columns", "required", "description"]);
     } else {
         builder.push_record(["table", "columns", "required", "description"]);
     }

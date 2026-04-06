@@ -93,7 +93,20 @@ pub fn json_response_to_batch(
     let items = match json {
         serde_json::Value::Array(arr) => arr.as_slice(),
         serde_json::Value::Object(_) => std::slice::from_ref(json),
-        _ => &[],
+        other => {
+            return Err(DataFusionError::External(Box::new(std::io::Error::other(
+                format!(
+                    "expected JSON array or object from API, got {}",
+                    match other {
+                        serde_json::Value::Null => "null",
+                        serde_json::Value::Bool(_) => "boolean",
+                        serde_json::Value::Number(_) => "number",
+                        serde_json::Value::String(_) => "string",
+                        _ => unreachable!(),
+                    }
+                ),
+            ))));
+        }
     };
 
     // Build key map once from the first item (O(keys) instead of O(rows * cols * keys))
@@ -495,5 +508,28 @@ mod tests {
         let params = HashMap::new();
         let batch = json_response_to_batch(&json, &cols, &params, &schema).unwrap();
         assert!(batch.column(0).is_null(0));
+    }
+
+    #[test]
+    fn unexpected_json_shape_is_error() {
+        let cols = vec![response_col("title", ColumnType::String)];
+        let table = test_table(cols.clone());
+        let schema = virtual_table_to_schema(&table);
+        let params = HashMap::new();
+
+        for (json, expected_label) in [
+            (serde_json::Value::Null, "null"),
+            (serde_json::Value::Bool(true), "boolean"),
+            (serde_json::json!(42), "number"),
+            (serde_json::json!("a string"), "string"),
+        ] {
+            let err = json_response_to_batch(&json, &cols, &params, &schema)
+                .expect_err(&format!("expected error for JSON {expected_label}"));
+            let msg = err.to_string();
+            assert!(
+                msg.contains(expected_label),
+                "error for {expected_label} should mention the type, got: {msg}"
+            );
+        }
     }
 }

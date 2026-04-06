@@ -201,7 +201,10 @@ impl ExecutionPlan for ApiTableExec {
                 Err(e) => return Some((Err(e), state)),
             };
 
-            let data = unwrap_response(&body, &state.table.endpoint.response_wrapper_key);
+            let data = match unwrap_response(&body, &state.table.endpoint.response_wrapper_key) {
+                Ok(d) => d,
+                Err(e) => return Some((Err(e), state)),
+            };
 
             let batch = match json_response_to_batch(
                 data,
@@ -327,9 +330,44 @@ async fn fetch_page(
 fn unwrap_response<'a>(
     body: &'a serde_json::Value,
     wrapper_key: &Option<String>,
-) -> &'a serde_json::Value {
+) -> Result<&'a serde_json::Value, DataFusionError> {
     match wrapper_key {
-        Some(field) => body.get(field.as_str()).unwrap_or(body),
-        None => body,
+        Some(field) => body.get(field.as_str()).ok_or_else(|| {
+            DataFusionError::External(Box::new(std::io::Error::other(format!(
+                "response missing expected wrapper field '{field}'"
+            ))))
+        }),
+        None => Ok(body),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn unwrap_response_no_key_returns_body() {
+        let body = serde_json::json!({"items": [1, 2, 3]});
+        let result = unwrap_response(&body, &None).unwrap();
+        assert_eq!(result, &body);
+    }
+
+    #[test]
+    fn unwrap_response_valid_key_extracts_inner() {
+        let body = serde_json::json!({"items": [1, 2, 3], "total": 3});
+        let result = unwrap_response(&body, &Some("items".to_owned())).unwrap();
+        assert_eq!(result, &serde_json::json!([1, 2, 3]));
+    }
+
+    #[test]
+    fn unwrap_response_missing_key_is_error() {
+        let body = serde_json::json!({"data": [1, 2, 3]});
+        let err = unwrap_response(&body, &Some("items".to_owned()))
+            .expect_err("should fail when wrapper key is absent");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("items"),
+            "error should name the missing field, got: {msg}"
+        );
     }
 }

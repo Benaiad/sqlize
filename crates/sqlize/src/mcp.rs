@@ -21,10 +21,17 @@ pub struct SqlizeServer {
 
 impl SqlizeServer {
     pub fn new(catalog_set: Arc<CatalogSet>, ctx: Arc<QueryEngine>, api_title: &str) -> Self {
+        let multi = catalog_set.is_multi();
         let table_names: Vec<String> = catalog_set
             .all_tables()
             .iter()
-            .map(|(_, t)| t.name.as_str().to_owned())
+            .map(|(schema, t)| {
+                if multi {
+                    format!("{schema}.{}", t.name)
+                } else {
+                    t.name.as_str().to_owned()
+                }
+            })
             .collect();
         let instructions = format!(
             "SQLize: Query the {api_title} using SQL.\n\
@@ -76,11 +83,18 @@ impl SqlizeServer {
             if let Some(ddl) = self.catalog_set.describe(name) {
                 ddl
             } else {
+                let multi = self.catalog_set.is_multi();
                 let available: Vec<String> = self
                     .catalog_set
                     .all_tables()
                     .iter()
-                    .map(|(_, t)| t.name.as_str().to_owned())
+                    .map(|(schema, t)| {
+                        if multi {
+                            format!("{schema}.{}", t.name)
+                        } else {
+                            t.name.as_str().to_owned()
+                        }
+                    })
                     .collect();
                 format!(
                     "Table '{name}' not found. Available tables:\n{}",
@@ -88,10 +102,16 @@ impl SqlizeServer {
                 )
             }
         } else {
+            let multi = self.catalog_set.is_multi();
             let mut out = String::from(
                 "Available tables (use get_schema with a table name for full DDL):\n\n",
             );
-            for (_, table) in self.catalog_set.all_tables() {
+            for (schema, table) in self.catalog_set.all_tables() {
+                let display_name = if multi {
+                    format!("{schema}.{}", table.name)
+                } else {
+                    table.name.as_str().to_owned()
+                };
                 let required: Vec<_> = table.required_params().map(|c| c.name.as_str()).collect();
                 let req = if required.is_empty() {
                     String::new()
@@ -99,8 +119,7 @@ impl SqlizeServer {
                     format!("  required: {}", required.join(", "))
                 };
                 out.push_str(&format!(
-                    "  {:<30} -- {}{}\n",
-                    table.name,
+                    "  {display_name:<30} -- {}{}\n",
                     table
                         .description
                         .as_ref()
